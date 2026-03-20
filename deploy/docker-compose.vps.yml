@@ -1,0 +1,29 @@
+name: lushtempmail
+
+services:
+  app:
+    container_name: lushtempmail-app
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "8010"
+    volumes:
+      - ./data:/app/data
+    networks:
+      default:
+      shared_proxy:
+        aliases:
+          - lushtempmail-app
+      mailstack_default:
+
+networks:
+  shared_proxy:
+    external: true
+    name: shared_proxy
+  mailstack_default:
+    external: true
+    name: mailstack_default

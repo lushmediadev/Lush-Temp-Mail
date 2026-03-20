@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LushMail - Temp mail admin dashboard cho congmail.top">
+  <title>LushMail Admin</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lush: {
+              50: '#fff7f5',
+              100: '#fff0eb',
+              200: '#ffd9cc',
+              300: '#ffb8a3',
+              400: '#ff8c6b',
+              500: '#ff5528',
+              600: '#e64a20',
+              700: '#cc3f18',
+              800: '#a33010',
+              900: '#7a2008',
+            }
+          },
+          fontFamily: {
+            fustat: ['Fustat', 'sans-serif'],
+            inter: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="font-inter antialiased bg-white text-gray-800 min-h-screen">
+  <div id="loginPage" class="min-h-screen flex items-center justify-center relative overflow-hidden">
+    <div class="absolute top-[-120px] left-[-80px] w-[500px] h-[500px] bg-lush-500/20 rounded-full blur-[120px] pointer-events-none"></div>
+    <div class="absolute bottom-[-100px] right-[-60px] w-[400px] h-[400px] bg-lush-400/15 rounded-full blur-[100px] pointer-events-none"></div>
+
+    <div class="relative z-10 w-full max-w-md mx-4">
+      <div class="login-glass rounded-3xl p-8 sm:p-10 shadow-2xl shadow-lush-500/10">
+        <div class="flex flex-col items-center mb-8">
+          <img src="logo.svg" alt="LushMail Logo" class="w-14 h-14 mb-3">
+          <h1 class="font-fustat text-3xl font-bold text-gray-900">Lush<span class="text-lush-500">Mail</span></h1>
+          <p class="text-gray-500 text-sm mt-1">Temp mail admin cho hệ thống congmail.top</p>
+        </div>
+
+        <form id="loginForm" class="space-y-4">
+          <div>
+            <label for="loginEmail" class="block text-sm font-medium text-gray-700 mb-1.5">Admin username</label>
+            <div class="relative">
+              <i data-lucide="shield-check" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400"></i>
+              <input type="text" id="loginEmail" name="username" autocomplete="username" placeholder="admin"
+                class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm text-sm focus:outline-none focus:ring-2 focus:ring-lush-500/40 focus:border-lush-500 transition-all placeholder:text-gray-400">
+            </div>
+          </div>
+          <div>
+            <label for="loginPassword" class="block text-sm font-medium text-gray-700 mb-1.5">Mật khẩu</label>
+            <div class="relative">
+              <i data-lucide="lock" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400"></i>
+              <input type="password" id="loginPassword" name="password" autocomplete="current-password" placeholder="••••••••"
+                class="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-200 bg-white/80 backdrop-blur-sm text-sm focus:outline-none focus:ring-2 focus:ring-lush-500/40 focus:border-lush-500 transition-all placeholder:text-gray-400">
+            </div>
+          </div>
+
+          <button type="submit" id="loginBtn"
+            class="w-full py-3.5 bg-lush-500 hover:bg-lush-600 text-white font-semibold rounded-xl transition-all duration-200 hover:scale-[1.02] hover:shadow-lg hover:shadow-lush-500/30 active:scale-[0.98] flex items-center justify-center gap-2 text-sm">
+            <i data-lucide="log-in" class="w-4.5 h-4.5"></i>
+            Đăng nhập admin
+          </button>
+        </form>
+
+        <p id="loginError" class="hidden text-center text-sm text-red-500 mt-4"></p>
+      </div>
+    </div>
+  </div>
+
+  <div id="appPage" class="hidden min-h-screen flex flex-col">
+    <nav class="sticky top-0 z-50 nav-glass border-b border-gray-200/50">
+      <div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button id="sidebarToggle" class="lg:hidden p-2 rounded-xl hover:bg-gray-100 transition-colors">
+            <i data-lucide="menu" class="w-5 h-5 text-gray-600"></i>
+          </button>
+          <img src="logo.svg" alt="LushMail" class="w-8 h-8">
+          <span class="font-fustat font-bold text-xl text-gray-900">Lush<span class="text-lush-500">Mail</span></span>
+        </div>
+        <div class="flex items-center gap-3">
+          <button id="syncNowBtn" class="p-2 rounded-xl hover:bg-gray-100 transition-colors" title="Đồng bộ">
+            <i data-lucide="refresh-cw" class="w-5 h-5 text-gray-500"></i>
+          </button>
+          <div class="flex items-center gap-2 pl-3 border-l border-gray-200">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-lush-400 to-lush-600 flex items-center justify-center text-white text-sm font-semibold">A</div>
+            <span id="adminName" class="hidden sm:block text-sm font-medium text-gray-700">admin</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="relative overflow-hidden">
+      <div class="hero-gradient py-10 sm:py-14">
+        <div class="absolute top-[-60px] left-[10%] w-[300px] h-[300px] bg-white/20 rounded-full blur-[80px] pointer-events-none"></div>
+        <div class="absolute bottom-[-40px] right-[15%] w-[200px] h-[200px] bg-white/15 rounded-full blur-[60px] pointer-events-none"></div>
+
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 relative z-10">
+          <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="font-fustat text-2xl sm:text-3xl font-bold text-white tracking-tight">
+                Catch-all temp mail cho <span class="text-lush-100">@congmail.top</span>
+              </h2>
+              <p class="text-white/80 text-sm sm:text-base mt-1 max-w-2xl">
+                Có thể nhập trực tiếp một email bất kỳ như <span class="font-mono">abc123@congmail.top</span> ở trang đăng ký bên ngoài.
+                Khi mail gửi tới, dashboard này sẽ tự nhận ra alias mới và nhóm email theo đúng recipient.
+              </p>
+            </div>
+            <button id="heroCreateBtn"
+              class="flex-shrink-0 px-6 py-3 bg-white text-lush-600 font-semibold rounded-2xl hover:bg-lush-50 transition-all duration-200 hover:scale-[1.03] hover:shadow-xl hover:shadow-lush-900/20 active:scale-[0.98] flex items-center gap-2 text-sm shadow-lg">
+              <i data-lucide="plus-circle" class="w-4.5 h-4.5"></i>
+              Tạo alias mới
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex-1 flex max-w-[1600px] w-full mx-auto">
+      <div id="sidebarOverlay" class="fixed inset-0 bg-black/30 z-30 hidden lg:hidden"></div>
+
+      <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 z-40 w-72 bg-white border-r border-gray-100 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 flex flex-col pt-4 lg:pt-0">
+        <div class="lg:hidden flex items-center justify-between px-4 py-3 border-b border-gray-100">
+          <span class="font-fustat font-bold text-lg text-gray-900">Menu</span>
+          <button id="closeSidebarBtn" class="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+          </button>
+        </div>
+
+        <div class="px-3 py-4">
+          <div class="flex bg-gray-100 rounded-xl p-1 gap-1">
+            <button id="tabMailBtn" data-tab="mail"
+              class="tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5 active">
+              <i data-lucide="inbox" class="w-4 h-4"></i>
+              Mail feed
+            </button>
+            <button id="tabTempBtn" data-tab="tempmail"
+              class="tab-btn flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 flex items-center justify-center gap-1.5">
+              <i data-lucide="at-sign" class="w-4 h-4"></i>
+              Alias
+            </button>
+          </div>
+        </div>
+
+        <nav id="mailNav" class="px-3 space-y-0.5 flex-1">
+          <button data-filter="all" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 active">
+            <i data-lucide="inbox" class="w-4.5 h-4.5"></i>
+            <span class="flex-1 text-left">Tất cả email</span>
+          </button>
+          <button data-filter="unread" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
+            <i data-lucide="mail-open" class="w-4.5 h-4.5"></i>
+            <span class="flex-1 text-left">Chưa đọc</span>
+          </button>
+          <button data-filter="otp" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
+            <i data-lucide="badge-check" class="w-4.5 h-4.5"></i>
+            <span class="flex-1 text-left">Có OTP</span>
+          </button>
+          <button data-filter="links" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
+            <i data-lucide="link" class="w-4.5 h-4.5"></i>
+            <span class="flex-1 text-left">Có link verify</span>
+          </button>
+        </nav>
+
+        <div id="tempPanel" class="hidden px-3 flex-1 space-y-4 overflow-y-auto pb-4">
+          <div class="bg-lush-50 border border-lush-200/60 rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="mail-check" class="w-4 h-4 text-lush-500"></i>
+              <span class="text-xs font-semibold text-lush-700 uppercase tracking-wider">Alias đang chọn</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="currentEmail" class="text-sm font-mono font-medium text-gray-800 truncate flex-1">Chưa chọn alias</span>
+              <button id="copyEmailBtn" title="Copy" class="p-1.5 rounded-lg hover:bg-lush-100 transition-colors text-lush-500">
+                <i data-lucide="copy" class="w-4 h-4"></i>
+              </button>
+            </div>
+            <p id="currentAliasMeta" class="text-xs text-gray-500 mt-2">Tạo hoặc chọn một alias để xem inbox theo địa chỉ đó.</p>
+          </div>
+
+          <div class="bg-white border border-gray-200 rounded-2xl p-4 space-y-3">
+            <div class="flex items-center gap-2">
+              <i data-lucide="plus-circle" class="w-4 h-4 text-lush-500"></i>
+              <span class="text-sm font-semibold text-gray-900">Tạo alias</span>
+            </div>
+            <div class="space-y-2">
+              <input id="aliasLocalPartInput" type="text" placeholder="Nhập prefix hoặc để trống để random"
+                class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all">
+              <input id="aliasLabelInput" type="text" placeholder="Nhãn gợi nhớ: spotify, tiktok, shop..."
+                class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all">
+              <select id="aliasExpirySelect" class="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all">
+                <option value="6">Hết hạn sau 6 giờ</option>
+                <option value="24" selected>Hết hạn sau 24 giờ</option>
+                <option value="72">Hết hạn sau 72 giờ</option>
+                <option value="168">Hết hạn sau 7 ngày</option>
+              </select>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <button id="generateAliasBtn" class="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium bg-lush-500 text-white rounded-xl hover:bg-lush-600 transition-all">
+                <i data-lucide="sparkles" class="w-3.5 h-3.5"></i> Random
+              </button>
+              <button id="createAliasBtn" class="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium bg-white border border-gray-200 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition-all">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i> Tạo theo prefix
+              </button>
+              <button id="expireAliasBtn" class="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium bg-white border border-amber-200 text-amber-700 rounded-xl hover:bg-amber-50 transition-all">
+                <i data-lucide="clock-3" class="w-3.5 h-3.5"></i> Expire
+              </button>
+              <button id="deleteAliasBtn" class="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-medium bg-white border border-red-200 text-red-600 rounded-xl hover:bg-red-50 transition-all">
+                <i data-lucide="trash" class="w-3.5 h-3.5"></i> Xóa
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <div class="relative">
+              <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+              <input type="text" id="tempSearch" placeholder="Tìm alias..."
+                class="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all placeholder:text-gray-400">
+            </div>
+            <div id="aliasList" class="space-y-2"></div>
+          </div>
+        </div>
+
+        <div class="px-3 py-4 border-t border-gray-100 mt-auto">
+          <button id="logoutBtn" class="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all duration-150">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            Đăng xuất
+          </button>
+        </div>
+      </aside>
+
+      <main class="flex-1 flex flex-col min-w-0">
+        <div class="border-b border-gray-100 px-4 sm:px-6 py-3 flex items-center justify-between bg-white">
+          <div class="flex items-center gap-3">
+            <h3 id="folderTitle" class="font-fustat text-lg font-bold text-gray-900">Tất cả email</h3>
+            <span id="folderCount" class="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-0.5 rounded-full">0 email</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="hidden sm:flex relative">
+              <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+              <input type="text" id="mainSearch" placeholder="Tìm theo subject, sender..."
+                class="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all w-60 placeholder:text-gray-400">
+            </div>
+            <button id="refreshBtn" class="p-2 rounded-xl hover:bg-gray-100 transition-colors" title="Refresh">
+              <i data-lucide="refresh-cw" class="w-4.5 h-4.5 text-gray-500"></i>
+            </button>
+          </div>
+        </div>
+
+        <div id="emailList" class="flex-1 overflow-y-auto"></div>
+
+        <div id="emptyState" class="hidden flex-1 flex flex-col items-center justify-center py-16 text-center px-4">
+          <div class="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center mb-4">
+            <i data-lucide="inbox" class="w-8 h-8 text-gray-300"></i>
+          </div>
+          <h4 class="font-fustat text-lg font-bold text-gray-400 mb-1">Chưa có email nào</h4>
+          <p class="text-sm text-gray-400 max-w-xs">Khi hệ thống bắt được email mới, danh sách sẽ xuất hiện ở đây.</p>
+        </div>
+      </main>
+
+      <div id="emailDetail" class="hidden lg:block w-[420px] border-l border-gray-100 bg-white overflow-y-auto flex-shrink-0">
+        <div id="detailContent" class="p-6">
+          <div class="flex flex-col items-center justify-center py-20 text-center">
+            <div class="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4">
+              <i data-lucide="mouse-pointer-click" class="w-7 h-7 text-gray-300"></i>
+            </div>
+            <p class="text-sm text-gray-400">Chọn email để xem chi tiết</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="mobileDetail" class="fixed inset-0 z-50 bg-white hidden lg:hidden overflow-y-auto">
+      <div class="sticky top-0 bg-white/90 backdrop-blur-xl border-b border-gray-100 px-4 py-3 flex items-center gap-3 z-10">
+        <button id="closeMobileDetailBtn" class="p-2 rounded-xl hover:bg-gray-100 transition-colors">
+          <i data-lucide="arrow-left" class="w-5 h-5 text-gray-600"></i>
+        </button>
+        <span class="font-fustat font-bold text-gray-900">Chi tiết email</span>
+      </div>
+      <div id="mobileDetailContent" class="p-4 sm:p-6"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-2xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none flex items-center gap-2">
+    <i data-lucide="check-circle" class="w-4 h-4 text-green-400"></i>
+    <span id="toastMsg">Done</span>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

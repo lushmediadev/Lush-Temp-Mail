@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+deploy/.env
+deploy/LOCAL_PASSWORDS.md
+backend/.pytest_cache/
