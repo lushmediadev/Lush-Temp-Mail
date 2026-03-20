@@ -68,6 +68,9 @@ def init_db() -> None:
             );
             """
         )
+        message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        if "important" not in message_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
 
 
 def row_to_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -109,6 +112,7 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "raw_headers": json.loads(row["raw_headers_json"] or "{}"),
         "received_at": row["received_at"],
         "unread": bool(row["unread"]),
+        "important": bool(row["important"]),
         "suppressed": bool(row["suppressed"]),
     }
 
@@ -154,6 +158,30 @@ def set_state(key: str, value: str) -> None:
             "INSERT INTO app_state(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def _refresh_alias_stats(conn: sqlite3.Connection, alias_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE aliases
+        SET
+            last_message_at = (
+                SELECT MAX(received_at) FROM messages WHERE alias_id = aliases.id AND suppressed = 0
+            ),
+            last_sender = (
+                SELECT COALESCE(from_email, from_name, '')
+                FROM messages
+                WHERE alias_id = aliases.id AND suppressed = 0
+                ORDER BY received_at DESC, id DESC
+                LIMIT 1
+            ),
+            message_count = (
+                SELECT COUNT(*) FROM messages WHERE alias_id = aliases.id AND suppressed = 0
+            )
+        WHERE id = ?
+        """,
+        (alias_id,),
+    )
 
 
 def ensure_alias(
@@ -271,11 +299,30 @@ def cleanup_expired_aliases(now_iso: str) -> int:
     return cursor.rowcount
 
 
+def cleanup_old_messages(cutoff_iso: str) -> int:
+    with _connect() as conn:
+        alias_rows = conn.execute(
+            """
+            SELECT DISTINCT alias_id
+            FROM messages
+            WHERE suppressed = 0 AND received_at < ? AND alias_id IS NOT NULL
+            """,
+            (cutoff_iso,),
+        ).fetchall()
+        cursor = conn.execute(
+            "UPDATE messages SET suppressed = 1 WHERE suppressed = 0 AND received_at < ?",
+            (cutoff_iso,),
+        )
+        for row in alias_rows:
+            _refresh_alias_stats(conn, row["alias_id"])
+    return cursor.rowcount
+
+
 def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     recipient_address = normalize_address(payload["recipient_address"])
     alias = get_alias_by_address(recipient_address)
     if alias is None:
-        alias = ensure_alias(recipient_address, source="inbound")
+        alias = ensure_alias(recipient_address, source="inbound", expires_at=iso_in_hours(settings.default_alias_hours))
 
     if alias["status"] != "active":
         return None
@@ -307,16 +354,7 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
                 payload["received_at"],
             ),
         )
-        conn.execute(
-            """
-            UPDATE aliases
-            SET last_message_at = ?, last_sender = ?, message_count = (
-                SELECT COUNT(*) FROM messages WHERE alias_id = aliases.id AND suppressed = 0
-            )
-            WHERE id = ?
-            """,
-            (payload["received_at"], payload.get("from_email", ""), alias["id"]),
-        )
+        _refresh_alias_stats(conn, alias["id"])
         row = conn.execute("SELECT * FROM messages WHERE imap_uid = ?", (payload["imap_uid"],)).fetchone()
     return row_to_message(row)
 
@@ -335,14 +373,26 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
         values.append(alias_id)
     if filter_name == "unread":
         query += " AND unread = 1"
+    elif filter_name == "important":
+        query += " AND important = 1"
     elif filter_name == "otp":
         query += " AND extracted_otps_json != '[]'"
     elif filter_name == "links":
         query += " AND extracted_links_json != '[]'"
     if search:
         pattern = f"%{search.lower()}%"
-        query += " AND (LOWER(subject) LIKE ? OR LOWER(COALESCE(from_email, '')) LIKE ? OR LOWER(COALESCE(snippet, '')) LIKE ?)"
-        values.extend([pattern, pattern, pattern])
+        query += """
+            AND (
+                LOWER(COALESCE(messages.recipient_address, '')) LIKE ?
+                OR LOWER(COALESCE(aliases.address, '')) LIKE ?
+                OR LOWER(COALESCE(aliases.local_part, '')) LIKE ?
+                OR LOWER(COALESCE(subject, '')) LIKE ?
+                OR LOWER(COALESCE(from_name, '')) LIKE ?
+                OR LOWER(COALESCE(from_email, '')) LIKE ?
+                OR LOWER(COALESCE(snippet, '')) LIKE ?
+            )
+        """
+        values.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern])
     query += " ORDER BY received_at DESC LIMIT ?"
     values.append(limit)
     with _connect() as conn:
@@ -359,5 +409,24 @@ def get_message(message_id: int) -> dict[str, Any] | None:
 def mark_message_read(message_id: int) -> dict[str, Any] | None:
     with _connect() as conn:
         conn.execute("UPDATE messages SET unread = 0 WHERE id = ?", (message_id,))
+        row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+    return row_to_message(row)
+
+
+def set_message_important(message_id: int, important: bool) -> dict[str, Any] | None:
+    with _connect() as conn:
+        conn.execute("UPDATE messages SET important = ? WHERE id = ?", (1 if important else 0, message_id))
+        row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+    return row_to_message(row)
+
+
+def delete_message(message_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        existing = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+        if existing is None:
+            return None
+        conn.execute("UPDATE messages SET suppressed = 1 WHERE id = ?", (message_id,))
+        if existing["alias_id"] is not None:
+            _refresh_alias_stats(conn, existing["alias_id"])
         row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
     return row_to_message(row)

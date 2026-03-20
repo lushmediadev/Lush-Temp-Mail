@@ -10,7 +10,7 @@ from email.utils import getaddresses
 from . import db
 from .config import settings
 from .parser import collect_headers, extract_links, extract_otps, extract_recipient, extract_snippet, extract_text_parts, parse_received_at
-from .utils import utc_now_iso
+from .utils import iso_days_ago, utc_now_iso
 
 
 logger = logging.getLogger("lush_temp_mail.sync")
@@ -51,6 +51,7 @@ class MailSyncService:
 
     def sync_once(self) -> int:
         db.cleanup_expired_aliases(utc_now_iso())
+        db.cleanup_old_messages(iso_days_ago(settings.message_retention_days))
         if not settings.sync_enabled or not settings.imap_password:
             return 0
 

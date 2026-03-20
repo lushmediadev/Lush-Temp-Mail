@@ -11,6 +11,8 @@ from . import db
 from .auth import clear_admin_session, create_admin_session, require_admin
 from .config import settings
 from .imap_sync import MailSyncService
+from .mailer import send_composed_message
+from .translator import DEFAULT_TARGET_LANGUAGE, translate_message
 from .utils import iso_in_hours, is_valid_local_part, random_local_part
 
 
@@ -144,6 +146,61 @@ def get_message(message_id: int, _session=Depends(require_admin)) -> dict[str, A
         raise HTTPException(status_code=404, detail="Email không tồn tại")
     db.mark_message_read(message_id)
     return {"item": db.get_message(message_id)}
+
+
+@app.delete("/api/messages/{message_id}")
+def delete_message(message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.delete_message(message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+    return {"item": message}
+
+
+@app.patch("/api/messages/{message_id}/important")
+def set_message_important(message_id: int, payload: dict[str, Any] = Body(default={}), _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.set_message_important(message_id, bool(payload.get("important")))
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+    return {"item": message}
+
+
+@app.post("/api/messages/{message_id}/translate")
+def translate_email(message_id: int, payload: dict[str, Any] = Body(default={}), _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.get_message(message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+
+    try:
+        result = translate_message(message, target_language=(payload.get("target_language") or DEFAULT_TARGET_LANGUAGE))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Dịch mail thất bại: {error}") from error
+
+    return {"ok": True, "item": {"message_id": message_id, **result}}
+
+
+@app.post("/api/messages/{message_id}/send")
+def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.get_message(message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+
+    try:
+        result = send_composed_message(
+            source_message=message,
+            mode=(payload.get("mode") or "reply").strip().lower(),
+            to_value=payload.get("to", ""),
+            cc_value=payload.get("cc", ""),
+            subject=payload.get("subject", ""),
+            body=payload.get("body", ""),
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Gửi mail thất bại: {error}") from error
+
+    return {"ok": True, "item": result}
 
 
 @app.post("/api/sync")

@@ -1,28 +1,40 @@
 const state = {
   session: null,
-  currentTab: 'mail',
   currentFilter: 'all',
-  mailboxes: [],
   messages: [],
-  selectedMailboxId: null,
   selectedMessageId: null,
+  selectedMessageIds: [],
+  selectionAnchorMessageId: null,
   selectedMessageCache: null,
+  messageTranslations: {},
+  messageTranslationVisibility: {},
   mainSearch: '',
-  aliasSearch: '',
   recentMessageIds: {},
+  seenMessageIds: {},
   hasLoadedMessages: false,
+  currentPage: 1,
+  composeDraft: null,
+  messageListSignature: '',
 };
 
 const dom = {};
 let mainSearchTimer = null;
-let aliasSearchTimer = null;
 let autoRefreshTimer = null;
 let refreshPromise = null;
 let relativeTimeTimer = null;
 
-const AUTO_VIEW_REFRESH_MS = 8000;
+const AUTO_VIEW_REFRESH_MS = 3000;
 const RELATIVE_TIME_REFRESH_MS = 10000;
 const NEW_MESSAGE_HIGHLIGHT_MS = 180000;
+const MESSAGES_PER_PAGE = 12;
+const AVATAR_PALETTES = [
+  { background: 'linear-gradient(135deg, #ff7b57 0%, #ff5528 100%)', color: '#fff7f5' },
+  { background: 'linear-gradient(135deg, #ff9a5a 0%, #f97316 100%)', color: '#fffaf4' },
+  { background: 'linear-gradient(135deg, #fb7185 0%, #e11d48 100%)', color: '#fff1f2' },
+  { background: 'linear-gradient(135deg, #38bdf8 0%, #2563eb 100%)', color: '#eff6ff' },
+  { background: 'linear-gradient(135deg, #34d399 0%, #059669 100%)', color: '#ecfdf5' },
+  { background: 'linear-gradient(135deg, #a78bfa 0%, #7c3aed 100%)', color: '#f5f3ff' },
+];
 
 document.addEventListener('DOMContentLoaded', async () => {
   cacheDom();
@@ -34,12 +46,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 function cacheDom() {
   const ids = [
     'loginPage', 'appPage', 'loginForm', 'loginEmail', 'loginPassword', 'loginError', 'logoutBtn',
-    'tabMailBtn', 'tabTempBtn', 'mailNav', 'tempPanel', 'folderTitle', 'folderCount', 'emailList',
-    'emptyState', 'detailContent', 'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay',
-    'sidebarToggle', 'closeSidebarBtn', 'mainSearch', 'tempSearch', 'refreshBtn', 'syncNowBtn',
-    'currentEmail', 'currentAliasMeta', 'copyEmailBtn', 'aliasLocalPartInput', 'aliasLabelInput',
-    'aliasExpirySelect', 'generateAliasBtn', 'createAliasBtn', 'expireAliasBtn', 'deleteAliasBtn',
-    'aliasList', 'heroCreateBtn', 'adminName', 'toast', 'toastMsg', 'closeMobileDetailBtn',
+    'mailNav', 'folderTitle', 'folderCount', 'emailList', 'emptyState', 'detailContent',
+    'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay', 'sidebarToggle',
+    'closeSidebarBtn', 'mainSearch', 'refreshBtn', 'toast',
+    'toastMsg', 'closeMobileDetailBtn', 'paginationInfo', 'paginationControls',
   ];
   ids.forEach((id) => { dom[id] = document.getElementById(id); });
 }
@@ -47,31 +57,75 @@ function cacheDom() {
 function bindEvents() {
   dom.loginForm.addEventListener('submit', onLoginSubmit);
   dom.logoutBtn.addEventListener('click', logout);
-  dom.tabMailBtn.addEventListener('click', () => switchTab('mail'));
-  dom.tabTempBtn.addEventListener('click', () => switchTab('tempmail'));
   dom.sidebarToggle.addEventListener('click', openSidebar);
   dom.closeSidebarBtn.addEventListener('click', closeSidebar);
   dom.sidebarOverlay.addEventListener('click', closeSidebar);
   dom.refreshBtn.addEventListener('click', () => refreshData({ silent: false, forceSync: true }));
-  dom.syncNowBtn.addEventListener('click', () => refreshData({ silent: false, forceSync: true }));
-  dom.heroCreateBtn.addEventListener('click', () => {
-    switchTab('tempmail');
-    dom.aliasLocalPartInput.focus();
-  });
-  dom.copyEmailBtn.addEventListener('click', copySelectedAlias);
-  dom.generateAliasBtn.addEventListener('click', () => createAlias(true));
-  dom.createAliasBtn.addEventListener('click', () => createAlias(false));
-  dom.expireAliasBtn.addEventListener('click', expireSelectedAlias);
-  dom.deleteAliasBtn.addEventListener('click', deleteSelectedAlias);
   dom.mainSearch.addEventListener('input', onMainSearchChange);
-  dom.tempSearch.addEventListener('input', onAliasSearchChange);
   dom.closeMobileDetailBtn.addEventListener('click', closeMobileDetail);
 
   document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
     button.addEventListener('click', () => setMailFilter(button.dataset.filter));
   });
 
+  document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onGlobalKeyDown);
   document.addEventListener('visibilitychange', onVisibilityChange);
+}
+
+function onDocumentClick(event) {
+  if (state.selectedMessageIds.length <= 1) {
+    return;
+  }
+  if (!(event.target instanceof HTMLElement)) {
+    return;
+  }
+  if (event.target.closest('[data-message-id]')) {
+    return;
+  }
+
+  clearSelection();
+}
+
+function onGlobalKeyDown(event) {
+  if (isEditableTarget(event.target)) {
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+    event.preventDefault();
+    selectAllVisibleMessages().catch(handleError);
+    return;
+  }
+
+  if (event.key !== 'Delete' || event.repeat) {
+    return;
+  }
+
+  const targetIds = getVisibleSelectedMessageIds();
+  if (!targetIds.length) {
+    return;
+  }
+
+  event.preventDefault();
+  deleteMessages(targetIds);
+}
+
+function isEditableTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+  return Boolean(target.closest('input, textarea, [contenteditable="true"], [contenteditable=""], select'));
+}
+
+function clearSelection() {
+  state.selectedMessageId = null;
+  state.selectedMessageIds = [];
+  state.selectionAnchorMessageId = null;
+  state.selectedMessageCache = null;
+  state.composeDraft = null;
+  renderMessages();
+  resetDetail();
 }
 
 async function bootstrapSession() {
@@ -117,13 +171,19 @@ async function logout() {
     // Ignore logout network errors and clear UI anyway.
   }
   state.session = null;
-  state.mailboxes = [];
   state.messages = [];
-  state.selectedMailboxId = null;
   state.selectedMessageId = null;
+  state.selectedMessageIds = [];
+  state.selectionAnchorMessageId = null;
   state.selectedMessageCache = null;
+  state.messageTranslations = {};
+  state.messageTranslationVisibility = {};
   state.recentMessageIds = {};
+  state.seenMessageIds = {};
   state.hasLoadedMessages = false;
+  state.currentPage = 1;
+  state.composeDraft = null;
+  state.messageListSignature = '';
   stopAutoRefresh();
   stopRelativeTimeTicker();
   showLogin();
@@ -141,7 +201,6 @@ function showLogin() {
 }
 
 function showApp() {
-  dom.adminName.textContent = state.session?.username || 'admin';
   dom.loginPage.classList.add('hidden');
   dom.appPage.classList.remove('hidden');
   lucide.createIcons();
@@ -207,27 +266,16 @@ function closeSidebar() {
   dom.sidebarOverlay.classList.add('hidden');
 }
 
-function switchTab(tab) {
-  state.currentTab = tab;
-  dom.tabMailBtn.classList.toggle('active', tab === 'mail');
-  dom.tabTempBtn.classList.toggle('active', tab === 'tempmail');
-  dom.mailNav.classList.toggle('hidden', tab !== 'mail');
-  dom.tempPanel.classList.toggle('hidden', tab !== 'tempmail');
-  closeSidebar();
-  updateHeader();
-  loadMessages().catch(handleError);
-}
-
 function setMailFilter(filterName) {
+  if (state.currentFilter === filterName) {
+    return;
+  }
   state.currentFilter = filterName;
+  state.currentPage = 1;
   document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
     button.classList.toggle('active', button.dataset.filter === filterName);
   });
-  state.selectedMessageId = null;
-  state.selectedMessageCache = null;
-  updateHeader();
-  resetDetail();
-  loadMessages().catch(handleError);
+  loadMessages({ preserveDetail: true }).catch(handleError);
 }
 
 async function refreshData(options = {}) {
@@ -271,209 +319,87 @@ function refreshRelativeTimeLabels() {
     node.textContent = formatRelativeDate(node.dataset.relativeTime);
   });
 
-  document.querySelectorAll('[data-alias-relative-time]').forEach((node) => {
-    node.textContent = formatAliasRelativeTime(node.dataset.aliasRelativeTime);
-  });
-
   pruneRecentMessageIds();
   updateRecentMessageDecorations();
 }
 
 async function loadDashboard(options = {}) {
   const { preserveDetail = false } = options;
-  await loadMailboxes();
-  await loadMessages();
+  await loadMessages({ preserveDetail });
 
-  if (!preserveDetail || !state.selectedMessageId || !state.selectedMessageCache) {
+  if (!preserveDetail || (!state.selectedMessageId && !state.selectedMessageCache)) {
     resetDetail();
   }
 }
 
-async function loadMailboxes() {
-  const payload = await api(`/api/mailboxes?status=visible&search=${encodeURIComponent(state.aliasSearch)}`);
-  state.mailboxes = payload.items;
-
-  if (state.mailboxes.length === 0) {
-    state.selectedMailboxId = null;
-  } else if (!state.mailboxes.some((item) => item.id === state.selectedMailboxId)) {
-    const firstActive = state.mailboxes.find((item) => item.status === 'active') || state.mailboxes[0];
-    state.selectedMailboxId = firstActive.id;
-  }
-
-  renderMailboxes();
-  updateCurrentAliasCard();
-}
-
-async function loadMessages() {
-  const previousIds = new Set(state.messages.map((item) => item.id));
+async function loadMessages(options = {}) {
+  const { preserveDetail = false } = options;
+  const previousSignature = state.messageListSignature;
+  const previousPage = state.currentPage;
+  const previousSelectedMessageId = state.selectedMessageId;
   const params = new URLSearchParams();
 
-  if (state.currentTab === 'tempmail' && state.selectedMailboxId) {
-    params.set('alias_id', state.selectedMailboxId);
-  }
-  params.set('filter_name', state.currentTab === 'mail' ? state.currentFilter : 'all');
+  params.set('filter_name', state.currentFilter);
   if (state.mainSearch.trim()) {
     params.set('search', state.mainSearch.trim());
   }
 
-  if (state.currentTab === 'tempmail' && !state.selectedMailboxId) {
-    state.messages = [];
-    renderMessages();
-    resetDetail();
-    updateHeader();
-    return;
-  }
-
   const payload = await api(`/api/messages?${params.toString()}`);
+  markRecentMessages(payload.items);
   state.messages = payload.items;
-  markRecentMessages(previousIds, state.messages);
+  state.selectedMessageIds = state.selectedMessageIds.filter((id) => state.messages.some((item) => item.id === id));
 
-  if (!state.messages.some((item) => item.id === state.selectedMessageId)) {
+  if (state.selectedMessageId && !state.messages.some((item) => item.id === state.selectedMessageId)) {
     state.selectedMessageId = null;
     state.selectedMessageCache = null;
+    state.composeDraft = null;
+  }
+  if (state.selectedMessageId && !state.selectedMessageIds.includes(state.selectedMessageId)) {
+    state.selectedMessageIds = [state.selectedMessageId];
+  }
+  if (!state.selectedMessageId && !state.selectedMessageIds.length) {
+    state.selectionAnchorMessageId = null;
   }
 
-  renderMessages();
+  const nextSignature = buildMessageListSignature(state.messages);
+  ensureValidPage();
+  const pageChanged = state.currentPage !== previousPage;
+  const selectionChanged = state.selectedMessageId !== previousSelectedMessageId;
+  const shouldRenderList = nextSignature !== previousSignature || pageChanged || selectionChanged;
+
+  if (shouldRenderList) {
+    state.messageListSignature = nextSignature;
+    renderMessages();
+  } else {
+    updateRecentMessageDecorations();
+  }
+
   updateHeader();
+  if (shouldRenderList || pageChanged) {
+    renderPagination();
+  }
+
+  if (!state.selectedMessageId) {
+    resetDetail();
+  } else if (!preserveDetail && state.selectedMessageCache) {
+    renderDetail(state.selectedMessageCache);
+  }
+
   state.hasLoadedMessages = true;
-}
-
-async function createAlias(randomMode) {
-  try {
-    const localPart = randomMode ? '' : dom.aliasLocalPartInput.value.trim().toLowerCase();
-    const label = dom.aliasLabelInput.value.trim();
-    const expiresInHours = Number(dom.aliasExpirySelect.value || '24');
-    const payload = await api('/api/mailboxes', {
-      method: 'POST',
-      body: JSON.stringify({
-        local_part: localPart,
-        label,
-        expires_in_hours: expiresInHours,
-      }),
-    });
-
-    await loadMailboxes();
-    state.selectedMailboxId = payload.item.id;
-    updateCurrentAliasCard();
-    await loadMessages();
-    switchTab('tempmail');
-    showToast(`Đã tạo ${payload.item.address}`);
-  } catch (error) {
-    handleError(error);
-  }
-}
-
-async function expireSelectedAlias() {
-  if (!state.selectedMailboxId) {
-    showToast('Chưa chọn alias');
-    return;
-  }
-  try {
-    await api(`/api/mailboxes/${state.selectedMailboxId}/expire`, { method: 'POST' });
-    await loadMailboxes();
-    await loadMessages();
-    showToast('Alias đã được expire');
-  } catch (error) {
-    handleError(error);
-  }
-}
-
-async function deleteSelectedAlias() {
-  if (!state.selectedMailboxId) {
-    showToast('Chưa chọn alias');
-    return;
-  }
-  try {
-    await api(`/api/mailboxes/${state.selectedMailboxId}`, { method: 'DELETE' });
-    state.selectedMailboxId = null;
-    await loadMailboxes();
-    await loadMessages();
-    showToast('Alias đã được xóa');
-  } catch (error) {
-    handleError(error);
-  }
 }
 
 function onMainSearchChange(event) {
   clearTimeout(mainSearchTimer);
   state.mainSearch = event.target.value;
+  state.currentPage = 1;
   mainSearchTimer = setTimeout(() => {
-    loadMessages().catch(handleError);
-  }, 220);
-}
-
-function onAliasSearchChange(event) {
-  clearTimeout(aliasSearchTimer);
-  state.aliasSearch = event.target.value;
-  aliasSearchTimer = setTimeout(() => {
-    loadMailboxes().catch(handleError);
-  }, 220);
-}
-
-function renderMailboxes() {
-  if (!dom.aliasList) return;
-
-  if (state.mailboxes.length === 0) {
-    dom.aliasList.innerHTML = `
-      <div class="text-center text-sm text-gray-400 py-6">
-        Chưa có alias nào. Bạn có thể tạo trước hoặc chờ mail gửi tới một địa chỉ bất kỳ để hệ thống tự phát hiện.
-      </div>
-    `;
-    lucide.createIcons();
-    return;
-  }
-
-  dom.aliasList.innerHTML = state.mailboxes.map((mailbox) => {
-    const activeClass = mailbox.id === state.selectedMailboxId ? 'active' : '';
-    const statusClass = `status-${mailbox.status}`;
-    const label = mailbox.label ? `<p class="text-xs text-gray-500 truncate mt-1">${escapeHtml(mailbox.label)}</p>` : '';
-    const meta = mailbox.last_message_at
-      ? `Email gần nhất <span data-alias-relative-time="${escapeAttribute(mailbox.last_message_at)}">${formatAliasRelativeTime(mailbox.last_message_at)}</span>`
-      : 'Chưa có email';
-
-    return `
-      <button class="alias-card ${activeClass} w-full text-left" data-alias-id="${mailbox.id}">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p class="text-sm font-semibold text-gray-900 truncate">${escapeHtml(mailbox.address)}</p>
-            ${label}
-            <p class="text-xs text-gray-400 mt-1">${meta}</p>
-          </div>
-          <span class="status-badge ${statusClass}">${mailbox.status}</span>
-        </div>
-        <div class="flex items-center justify-between mt-3 text-xs text-gray-500">
-          <span>${mailbox.message_count} email</span>
-          <span>${mailbox.expires_at ? 'Hết hạn ' + formatShortDate(mailbox.expires_at) : 'Không có hạn'}</span>
-        </div>
-      </button>
-    `;
-  }).join('');
-
-  dom.aliasList.querySelectorAll('[data-alias-id]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      state.selectedMailboxId = Number(button.dataset.aliasId);
-      updateCurrentAliasCard();
-      renderMailboxes();
-      await loadMessages();
-    });
-  });
-
-  updateCurrentAliasCard();
-  lucide.createIcons();
-}
-
-function updateCurrentAliasCard() {
-  const mailbox = state.mailboxes.find((item) => item.id === state.selectedMailboxId);
-  if (!mailbox) {
-    dom.currentEmail.textContent = 'Chưa chọn alias';
-    dom.currentAliasMeta.textContent = 'Tạo hoặc chọn một alias để xem inbox theo địa chỉ đó.';
-    return;
-  }
-  dom.currentEmail.textContent = mailbox.address;
-  dom.currentAliasMeta.textContent = `${mailbox.status} • ${mailbox.message_count} email • ${mailbox.label || 'chưa gắn nhãn'}`;
+    loadMessages({ preserveDetail: true }).catch(handleError);
+  }, 180);
 }
 
 function renderMessages() {
+  const visibleMessages = getVisibleMessages();
+
   if (!state.messages.length) {
     dom.emailList.innerHTML = '';
     dom.emailList.classList.add('hidden');
@@ -487,27 +413,47 @@ function renderMessages() {
   dom.emptyState.classList.add('hidden');
   dom.emptyState.classList.remove('flex');
 
-  dom.emailList.innerHTML = state.messages.map((message) => {
-    const selectedCls = message.id === state.selectedMessageId ? 'selected' : '';
+  dom.emailList.innerHTML = visibleMessages.map((message) => {
+    const selectedCls = isMessageSelected(message.id) ? 'selected' : '';
     const unreadCls = message.unread ? 'unread' : '';
     const recentCls = isRecentMessage(message.id) ? 'recent' : '';
-    const otpBadge = message.extracted_otps?.length ? `<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">OTP</span>` : '';
-    const linkBadge = message.extracted_links?.length ? `<span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Link</span>` : '';
+    const hasOtp = Boolean(message.extracted_otps?.length);
+    const hasLinks = Boolean(message.extracted_links?.length);
     const newBadge = isRecentMessage(message.id) ? '<span class="mail-badge mail-badge-new">Email mới</span>' : '';
+    const otpBadge = hasOtp ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">OTP</span>' : '';
+    const linkBadge = hasLinks ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Link</span>' : '';
+    const sender = escapeHtml(message.from_name || message.from_email || 'Unknown Sender');
+    const subject = escapeHtml(message.subject || '(No subject)');
+    const aliasAddress = escapeHtml(message.recipient_address);
+    const avatar = getAvatarPresentation(message);
+    const starAlwaysVisible = message.important || hasOtp ? 'always-visible' : '';
+    const starActive = message.important ? 'active' : '';
 
     return `
       <div class="email-row ${selectedCls} ${unreadCls} ${recentCls} px-4 sm:px-6 py-4 flex items-start gap-3" data-message-id="${message.id}" data-recent-message="${isRecentMessage(message.id) ? 'true' : 'false'}">
-        <div class="w-10 h-10 rounded-full bg-gradient-to-br from-lush-400 to-lush-600 flex-shrink-0 flex items-center justify-center text-white text-sm font-semibold mt-0.5">
-          ${(message.from_name || '?').charAt(0).toUpperCase()}
+        <div class="mail-avatar flex-shrink-0 mt-0.5" style="background:${avatar.background}; color:${avatar.color};">
+          ${avatar.label}
         </div>
         <div class="flex-1 min-w-0">
-          <div class="flex items-center justify-between gap-2 mb-0.5">
-            <span class="text-sm ${message.unread ? 'font-bold text-gray-900' : 'font-medium text-gray-700'} truncate">${escapeHtml(message.from_name || message.from_email || 'Unknown Sender')}</span>
-            <span class="text-xs text-gray-400 flex-shrink-0 whitespace-nowrap" data-relative-time="${escapeAttribute(message.received_at)}">${formatRelativeDate(message.received_at)}</span>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-gray-900 truncate">${aliasAddress}</p>
+              <p class="text-sm ${message.unread ? 'font-semibold text-gray-700' : 'font-medium text-gray-500'} truncate mt-0.5">${sender}</p>
+              <p class="text-sm ${message.unread ? 'text-gray-800' : 'text-gray-500'} truncate mt-0.5">${subject}</p>
+            </div>
+            <div class="flex flex-col items-end gap-2 flex-shrink-0">
+              <span class="text-xs text-gray-400 whitespace-nowrap" data-relative-time="${escapeAttribute(message.received_at)}">${formatRelativeDate(message.received_at)}</span>
+              <div class="row-actions">
+                <button class="row-action-btn row-star-btn ${starAlwaysVisible} ${starActive}" type="button" title="Đánh dấu quan trọng" data-toggle-important="${message.id}">
+                  <i data-lucide="star" class="w-4 h-4 pointer-events-none"></i>
+                </button>
+                <button class="row-action-btn row-delete-btn" type="button" title="Xóa email" data-delete-message="${message.id}">
+                  <i data-lucide="trash" class="w-4 h-4 pointer-events-none"></i>
+                </button>
+              </div>
+            </div>
           </div>
-          <p class="text-sm ${message.unread ? 'font-semibold text-gray-800' : 'text-gray-600'} truncate">${escapeHtml(message.subject || '(No subject)')}</p>
-          <p class="text-xs text-gray-400 truncate mt-0.5">${escapeHtml(message.recipient_address)}</p>
-          <div class="flex items-center gap-2 mt-2 flex-wrap">
+          <div class="flex items-center gap-2 mt-3 flex-wrap">
             ${newBadge}
             ${otpBadge}
             ${linkBadge}
@@ -518,17 +464,60 @@ function renderMessages() {
   }).join('');
 
   dom.emailList.querySelectorAll('[data-message-id]').forEach((row) => {
-    row.addEventListener('click', () => openMessage(Number(row.dataset.messageId)));
+    row.addEventListener('mousedown', (event) => {
+      if (event.shiftKey || event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+      }
+    });
+    row.addEventListener('click', async (event) => {
+      await handleMessageRowClick(Number(row.dataset.messageId), event);
+    });
+  });
+  dom.emailList.querySelectorAll('[data-delete-message]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await deleteMessage(Number(button.dataset.deleteMessage));
+    });
+  });
+  dom.emailList.querySelectorAll('[data-toggle-important]').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await toggleImportant(Number(button.dataset.toggleImportant));
+    });
   });
 
   lucide.createIcons();
 }
 
-async function openMessage(messageId) {
+async function handleMessageRowClick(messageId, event) {
+  if (event.shiftKey) {
+    const rangeIds = getRangeSelectionIds(messageId);
+    if (rangeIds.length > 1) {
+      const anchorId = state.selectionAnchorMessageId && getVisibleMessageIds().includes(state.selectionAnchorMessageId)
+        ? state.selectionAnchorMessageId
+        : messageId;
+      await openMessage(messageId, { selectionIds: rangeIds, anchorId });
+      return;
+    }
+  }
+
+  if (event.ctrlKey || event.metaKey) {
+    await toggleMessageSelection(messageId);
+    return;
+  }
+
+  await openMessage(messageId);
+}
+
+async function openMessage(messageId, options = {}) {
+  const { selectionIds = [messageId], anchorId = messageId } = options;
   try {
     const payload = await api(`/api/messages/${messageId}`);
     state.selectedMessageId = messageId;
+    state.selectedMessageIds = normalizeSelectedMessageIds(selectionIds);
+    state.selectionAnchorMessageId = anchorId;
     state.selectedMessageCache = payload.item;
+    state.composeDraft = null;
     delete state.recentMessageIds[messageId];
     renderMessages();
     renderDetail(payload.item);
@@ -540,31 +529,208 @@ async function openMessage(messageId) {
   }
 }
 
+async function deleteMessage(messageId) {
+  const targetIds = getDeleteTargetIds(messageId);
+  await deleteMessages(targetIds);
+}
+
+async function deleteMessages(messageIds) {
+  const uniqueIds = Array.from(new Set(messageIds.map(Number).filter(Boolean)));
+  if (!uniqueIds.length) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    uniqueIds.length === 1
+      ? 'Xóa email này khỏi dashboard?'
+      : `Xóa ${uniqueIds.length} email đã chọn khỏi dashboard?`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    await Promise.all(uniqueIds.map((messageId) => api(`/api/messages/${messageId}`, { method: 'DELETE' })));
+    uniqueIds.forEach((messageId) => {
+      delete state.recentMessageIds[messageId];
+      delete state.messageTranslations[messageId];
+      delete state.messageTranslationVisibility[messageId];
+    });
+    state.selectedMessageIds = state.selectedMessageIds.filter((messageId) => !uniqueIds.includes(messageId));
+    if (!state.selectedMessageIds.length) {
+      state.selectionAnchorMessageId = null;
+    }
+    if (uniqueIds.includes(state.selectedMessageId)) {
+      state.selectedMessageId = null;
+      state.selectedMessageCache = null;
+      state.composeDraft = null;
+      resetDetail();
+    }
+    await loadMessages({ preserveDetail: true });
+    showToast(uniqueIds.length === 1 ? 'Đã xóa email' : `Đã xóa ${uniqueIds.length} email`);
+  } catch (error) {
+    handleError(error);
+  }
+}
+
+async function toggleMessageSelection(messageId) {
+  const currentSelection = new Set(getVisibleSelectedMessageIds());
+  const willSelect = !currentSelection.has(messageId);
+
+  if (willSelect) {
+    currentSelection.add(messageId);
+  } else {
+    currentSelection.delete(messageId);
+  }
+
+  const nextIds = getVisibleMessageIds().filter((id) => currentSelection.has(id));
+  state.selectionAnchorMessageId = messageId;
+
+  if (!nextIds.length) {
+    clearSelection();
+    return;
+  }
+
+  const activeId = willSelect
+    ? messageId
+    : (nextIds.includes(state.selectedMessageId) ? state.selectedMessageId : nextIds[nextIds.length - 1]);
+
+  if (state.selectedMessageId === activeId && state.selectedMessageCache) {
+    state.selectedMessageIds = nextIds;
+    renderMessages();
+    return;
+  }
+
+  await openMessage(activeId, { selectionIds: nextIds, anchorId: messageId });
+}
+
+async function selectAllVisibleMessages() {
+  const nextIds = getVisibleMessageIds();
+  if (!nextIds.length) {
+    return;
+  }
+
+  const anchorId = state.selectionAnchorMessageId && nextIds.includes(state.selectionAnchorMessageId)
+    ? state.selectionAnchorMessageId
+    : nextIds[0];
+  const activeId = nextIds.includes(state.selectedMessageId) ? state.selectedMessageId : nextIds[0];
+
+  if (state.selectedMessageId === activeId && state.selectedMessageCache) {
+    state.selectedMessageIds = nextIds;
+    state.selectionAnchorMessageId = anchorId;
+    renderMessages();
+  } else {
+    await openMessage(activeId, { selectionIds: nextIds, anchorId });
+  }
+
+  showToast(`Đã chọn ${nextIds.length} email`);
+}
+
+async function toggleImportant(messageId) {
+  const message = state.messages.find((item) => item.id === messageId) || state.selectedMessageCache;
+  if (!message) {
+    return;
+  }
+
+  try {
+    const payload = await api(`/api/messages/${messageId}/important`, {
+      method: 'PATCH',
+      body: JSON.stringify({ important: !message.important }),
+    });
+    const updated = payload.item;
+    state.messages = state.messages.map((item) => (item.id === messageId ? updated : item));
+    if (state.selectedMessageId === messageId) {
+      state.selectedMessageCache = { ...(state.selectedMessageCache || updated), ...updated };
+      renderDetail(state.selectedMessageCache);
+    }
+    if (state.currentFilter === 'important' && !updated.important) {
+      await loadMessages({ preserveDetail: true });
+    } else {
+      state.messageListSignature = buildMessageListSignature(state.messages);
+      renderMessages();
+      updateHeader();
+      renderPagination();
+    }
+    showToast(updated.important ? 'Đã lưu vào Quan trọng' : 'Đã bỏ khỏi Quan trọng');
+  } catch (error) {
+    handleError(error);
+  }
+}
+
 function renderDetail(message) {
+  const avatar = getAvatarPresentation(message);
+  const composePanel = renderComposePanel(message);
+  const originalSubject = message.subject || '(No subject)';
+  const originalBody = message.text_body || message.snippet || '';
+  const translation = state.messageTranslations[message.id];
+  const isTranslationVisible = Boolean(
+    state.messageTranslationVisibility[message.id]
+    && translation
+    && !translation.loading
+    && (translation.translated_subject || translation.translated_body),
+  );
+  const detailSubject = isTranslationVisible ? (translation.translated_subject || originalSubject) : originalSubject;
+  const detailBody = isTranslationVisible ? (translation.translated_body || originalBody) : originalBody;
+  const translationMeta = renderTranslationMeta(message.id, translation, isTranslationVisible);
   const detailHTML = `
-    <div class="detail-fade-in">
-      <div class="flex items-start gap-3 mb-6">
-        <div class="w-11 h-11 rounded-full bg-gradient-to-br from-lush-400 to-lush-600 flex-shrink-0 flex items-center justify-center text-white font-semibold">
-          ${(message.from_name || '?').charAt(0).toUpperCase()}
-        </div>
-        <div class="flex-1 min-w-0">
-          <h4 class="font-fustat text-base font-bold text-gray-900">${escapeHtml(message.from_name || 'Unknown Sender')}</h4>
-          <p class="text-xs text-gray-400 break-all">${escapeHtml(message.from_email || '')}</p>
-          <p class="text-xs text-lush-600 mt-1 font-mono">${escapeHtml(message.recipient_address)}</p>
+    <div class="detail-fade-in detail-pane-shell">
+      <div class="detail-scroll-area" data-detail-scroll>
+        <div class="detail-reader">
+          ${composePanel}
+
+          <section class="detail-flat-section detail-flat-hero">
+            <div class="flex items-start gap-4">
+              <div class="mail-avatar-detail flex-shrink-0" style="background:${avatar.background}; color:${avatar.color};">
+                ${avatar.label}
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="detail-kicker">Alias nhận mail</p>
+                <h4 class="font-fustat text-xl font-bold text-gray-900 break-all">${escapeHtml(message.recipient_address)}</h4>
+                <div class="detail-meta-stack mt-3">
+                  <p class="text-sm text-gray-700">${escapeHtml(message.from_name || 'Unknown Sender')}</p>
+                  <p class="text-sm text-gray-400 break-all">${escapeHtml(message.from_email || '')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-title-block">
+              <p class="detail-kicker">Tiêu đề</p>
+              <h3 class="font-fustat text-[30px] font-bold text-gray-900 leading-snug">${escapeHtml(detailSubject)}</h3>
+              ${translationMeta}
+            </div>
+
+            <div class="detail-meta-row">
+              <div class="detail-meta-main">
+                <i data-lucide="calendar" class="w-4 h-4 text-gray-400"></i>
+                <span class="text-sm text-gray-500">${formatFullDate(message.received_at)}</span>
+              </div>
+              <button
+                type="button"
+                class="detail-translate-btn ${translation?.loading ? 'loading' : ''} ${isTranslationVisible ? 'active' : ''}"
+                data-translate-message="${message.id}"
+                title="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
+                aria-label="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
+              >
+                <i data-lucide="${translation?.loading ? 'loader-circle' : 'languages'}" class="w-4 h-4"></i>
+              </button>
+            </div>
+
+            ${renderDetailExtras(message)}
+          </section>
+
+          <section class="detail-flat-section">
+            <div class="detail-section-heading">
+              <p class="detail-kicker">Nội dung email</p>
+            </div>
+            <div class="detail-body-copy">
+              ${linkifyText(detailBody)}
+            </div>
+          </section>
         </div>
       </div>
 
-      <h3 class="font-fustat text-xl font-bold text-gray-900 mb-4 leading-snug">${escapeHtml(message.subject || '(No subject)')}</h3>
-
-      <div class="flex items-center gap-2 mb-6 py-3 border-y border-gray-100">
-        <i data-lucide="calendar" class="w-4 h-4 text-gray-400"></i>
-        <span class="text-xs text-gray-500">${formatFullDate(message.received_at)}</span>
-      </div>
-
-      ${renderDetailExtras(message)}
-
-      <div class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words">
-        ${linkifyText(message.text_body || message.snippet || '')}
+      <div class="detail-sticky-footer">
+        ${renderDetailActionBar(message)}
       </div>
     </div>
   `;
@@ -573,9 +739,252 @@ function renderDetail(message) {
   dom.mobileDetailContent.innerHTML = detailHTML;
   lucide.createIcons();
 
+  bindDetailActions();
+}
+
+function renderComposePanel(message) {
+  const draft = state.composeDraft;
+  if (!draft || draft.messageId !== message.id) {
+    return '';
+  }
+
+  return `
+    <section class="detail-flat-section detail-compose-section">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h5 class="font-fustat text-lg font-bold text-gray-900">${draft.mode === 'reply' ? 'Trả lời email' : 'Chuyển tiếp email'}</h5>
+        </div>
+        <button type="button" data-compose-close="true" class="detail-inline-close">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div class="grid gap-3 mt-5">
+        <label class="grid gap-1.5">
+          <span class="detail-field-label">To</span>
+          <input data-compose-field="to" value="${escapeAttribute(draft.to)}" class="detail-field-input" />
+        </label>
+        <label class="grid gap-1.5">
+          <span class="detail-field-label">CC</span>
+          <input data-compose-field="cc" value="${escapeAttribute(draft.cc)}" placeholder="cc@example.com, other@example.com" class="detail-field-input" />
+        </label>
+        <label class="grid gap-1.5">
+          <span class="detail-field-label">Subject</span>
+          <input data-compose-field="subject" value="${escapeAttribute(draft.subject)}" class="detail-field-input" />
+        </label>
+        <label class="grid gap-1.5">
+          <span class="detail-field-label">Message</span>
+          <textarea data-compose-field="body" rows="10" class="detail-field-input detail-field-textarea">${escapeHtml(draft.body)}</textarea>
+        </label>
+      </div>
+      <div class="detail-compose-footer">
+        <button type="button" data-compose-send="true" class="detail-send-btn ${draft.mode === 'reply' ? 'detail-send-btn-reply' : 'detail-send-btn-forward'}">
+          ${draft.mode === 'reply' ? 'Gửi trả lời' : 'Gửi chuyển tiếp'}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function renderDetailActionBar(message) {
+  const draft = state.composeDraft;
+  const isReplyActive = draft?.messageId === message.id && draft.mode === 'reply';
+  const isForwardActive = draft?.messageId === message.id && draft.mode === 'forward';
+
+  return `
+    <section class="detail-flat-toolbar detail-footer-shell">
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="button" data-compose-action="reply" class="detail-footer-action ${isReplyActive ? 'active' : ''}">
+          <i data-lucide="reply" class="w-4 h-4"></i>
+          Trả lời
+        </button>
+        <button type="button" data-compose-action="forward" class="detail-footer-action ${isForwardActive ? 'active accent' : ''}">
+          <i data-lucide="forward" class="w-4 h-4"></i>
+          Chuyển tiếp
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+function bindDetailActions() {
   document.querySelectorAll('[data-copy-code]').forEach((button) => {
     button.addEventListener('click', () => copyText(button.dataset.copyCode, 'Đã copy OTP'));
   });
+  document.querySelectorAll('[data-translate-message]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await toggleMessageTranslation(Number(button.dataset.translateMessage));
+    });
+  });
+  document.querySelectorAll('[data-compose-action]').forEach((button) => {
+    button.addEventListener('click', () => startCompose(button.dataset.composeAction));
+  });
+  document.querySelectorAll('[data-compose-close]').forEach((button) => {
+    button.addEventListener('click', () => {
+      state.composeDraft = null;
+      if (state.selectedMessageCache) {
+        renderDetail(state.selectedMessageCache);
+      }
+    });
+  });
+  document.querySelectorAll('[data-compose-field]').forEach((field) => {
+    field.addEventListener('input', () => {
+      if (!state.composeDraft) {
+        return;
+      }
+      state.composeDraft[field.dataset.composeField] = field.value;
+    });
+  });
+  document.querySelectorAll('[data-compose-send]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await sendCompose();
+    });
+  });
+}
+
+function startCompose(mode) {
+  if (!state.selectedMessageCache) {
+    return;
+  }
+  state.composeDraft = buildComposeDraft(state.selectedMessageCache, mode);
+  renderDetail(state.selectedMessageCache);
+  requestAnimationFrame(() => {
+    document.querySelectorAll('[data-detail-scroll]').forEach((node) => {
+      node.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    const bodyField = document.querySelector('[data-compose-field="body"]');
+    bodyField?.focus();
+    const bodyLength = bodyField?.value?.length || 0;
+    if (bodyField?.setSelectionRange) {
+      bodyField.setSelectionRange(0, 0);
+    }
+    if (bodyField && bodyLength > 0) {
+      bodyField.scrollTop = 0;
+    }
+  });
+}
+
+async function sendCompose() {
+  const draft = state.composeDraft;
+  if (!draft || !draft.messageId) {
+    return;
+  }
+
+  const sendButton = document.querySelector('[data-compose-send]');
+  const originalLabel = sendButton?.textContent;
+
+  try {
+    if (sendButton) {
+      sendButton.disabled = true;
+      sendButton.textContent = 'Đang gửi...';
+    }
+
+    await api(`/api/messages/${draft.messageId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: draft.mode,
+        to: draft.to,
+        cc: draft.cc,
+        subject: draft.subject,
+        body: draft.body,
+      }),
+    });
+
+    state.composeDraft = null;
+    if (state.selectedMessageCache) {
+      renderDetail(state.selectedMessageCache);
+    }
+    showToast(draft.mode === 'reply' ? 'Đã gửi trả lời' : 'Đã gửi chuyển tiếp');
+  } catch (error) {
+    handleError(error);
+  } finally {
+    if (sendButton) {
+      sendButton.disabled = false;
+      sendButton.textContent = originalLabel;
+    }
+  }
+}
+
+function buildComposeDraft(message, mode) {
+  const subjectPrefix = mode === 'reply' ? 'Re:' : 'Fwd:';
+  const senderName = message.from_name || message.from_email || 'Unknown Sender';
+  const senderEmail = message.from_email || '';
+  const quotedBody = message.text_body || message.snippet || '';
+  const headerLines = [
+    '',
+    '---',
+    `From: ${senderName}${senderEmail ? ` <${senderEmail}>` : ''}`,
+    `To: ${message.recipient_address}`,
+    `Subject: ${message.subject || '(No subject)'}`,
+    `Date: ${formatFullDate(message.received_at)}`,
+    '',
+    quotedBody,
+  ];
+
+  return {
+    messageId: message.id,
+    mode,
+    to: mode === 'reply' ? senderEmail : '',
+    cc: '',
+    subject: `${subjectPrefix} ${message.subject || '(No subject)'}`.trim(),
+    body: mode === 'reply'
+      ? `\n\n${headerLines.join('\n')}`
+      : `Chuyển tiếp email từ ${message.recipient_address}\n${headerLines.join('\n')}`,
+  };
+}
+
+function renderTranslationMeta(messageId, translation, isTranslationVisible) {
+  if (!translation || translation.loading) {
+    return '';
+  }
+
+  const sourceLanguage = formatLanguageLabel(translation.source_language);
+  const targetLanguage = formatLanguageLabel(translation.target_language || 'vi');
+
+  return `
+    <div class="detail-translation-note">
+      <i data-lucide="languages" class="w-3.5 h-3.5"></i>
+      <span>${isTranslationVisible ? `Đã dịch ${sourceLanguage} -> ${targetLanguage}` : `Có sẵn bản dịch ${sourceLanguage} -> ${targetLanguage}`}</span>
+    </div>
+  `;
+}
+
+async function toggleMessageTranslation(messageId) {
+  const message = state.selectedMessageCache;
+  if (!message || message.id !== messageId) {
+    return;
+  }
+
+  const existing = state.messageTranslations[messageId];
+  if (existing?.loading) {
+    return;
+  }
+
+  if (existing) {
+    state.messageTranslationVisibility[messageId] = !state.messageTranslationVisibility[messageId];
+    renderDetail(message);
+    return;
+  }
+
+  state.messageTranslations[messageId] = { loading: true };
+  renderDetail(message);
+
+  try {
+    const payload = await api(`/api/messages/${messageId}/translate`, {
+      method: 'POST',
+      body: JSON.stringify({ target_language: 'vi' }),
+    });
+    state.messageTranslations[messageId] = {
+      ...payload.item,
+      loading: false,
+    };
+    state.messageTranslationVisibility[messageId] = true;
+    renderDetail(message);
+    showToast('Đã dịch email sang tiếng Việt');
+  } catch (error) {
+    delete state.messageTranslations[messageId];
+    delete state.messageTranslationVisibility[messageId];
+    handleError(error);
+  }
 }
 
 function renderDetailExtras(message) {
@@ -598,20 +1007,22 @@ function renderDetailExtras(message) {
   }
 
   return `
-    <div class="space-y-3 mb-6">
-      ${otpSection ? `<div><p class="text-xs uppercase tracking-wider text-gray-400 mb-2 font-semibold">OTP tìm thấy</p><div class="flex flex-wrap gap-2">${otpSection}</div></div>` : ''}
-      ${linkSection ? `<div><p class="text-xs uppercase tracking-wider text-gray-400 mb-2 font-semibold">Link quan trọng</p><div class="flex flex-wrap gap-2">${linkSection}</div></div>` : ''}
+    <div class="detail-inline-groups">
+      ${otpSection ? `<div><p class="detail-kicker mb-3">OTP tìm thấy</p><div class="flex flex-wrap gap-2">${otpSection}</div></div>` : ''}
+      ${linkSection ? `<div><p class="detail-kicker mb-3">Link quan trọng</p><div class="flex flex-wrap gap-2">${linkSection}</div></div>` : ''}
     </div>
   `;
 }
 
 function resetDetail() {
   const html = `
-    <div class="flex flex-col items-center justify-center py-20 text-center">
-      <div class="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4">
-        <i data-lucide="mouse-pointer-click" class="w-7 h-7 text-gray-300"></i>
+    <div class="h-full flex items-center justify-center px-6 py-12">
+      <div class="rounded-[28px] border border-dashed border-gray-200 bg-white px-10 py-14 text-center max-w-md w-full">
+        <div class="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center mb-4 mx-auto">
+          <i data-lucide="mouse-pointer-click" class="w-7 h-7 text-gray-300"></i>
+        </div>
+        <p class="text-sm text-gray-400">Chọn email để xem chi tiết</p>
       </div>
-      <p class="text-sm text-gray-400">Chọn email để xem chi tiết</p>
     </div>
   `;
   dom.detailContent.innerHTML = html;
@@ -624,28 +1035,165 @@ function closeMobileDetail() {
 }
 
 function updateHeader() {
-  if (state.currentTab === 'mail') {
-    const titles = {
-      all: 'Tất cả email',
-      unread: 'Email chưa đọc',
-      otp: 'Email có OTP',
-      links: 'Email có link verify',
-    };
-    dom.folderTitle.textContent = titles[state.currentFilter] || 'Mail feed';
-  } else {
-    const mailbox = state.mailboxes.find((item) => item.id === state.selectedMailboxId);
-    dom.folderTitle.textContent = mailbox ? mailbox.address : 'Inbox theo alias';
-  }
+  const titles = {
+    all: 'Tất cả email',
+    unread: 'Email chưa đọc',
+    important: 'Email quan trọng',
+    otp: 'Email có OTP',
+    links: 'Email có link verify',
+  };
+  dom.folderTitle.textContent = titles[state.currentFilter] || 'Mail feed';
   dom.folderCount.textContent = `${state.messages.length} email`;
 }
 
-function copySelectedAlias() {
-  const mailbox = state.mailboxes.find((item) => item.id === state.selectedMailboxId);
-  if (!mailbox) {
-    showToast('Chưa chọn alias');
+function renderPagination() {
+  const total = state.messages.length;
+  const totalPages = getTotalPages();
+
+  if (total === 0) {
+    dom.paginationInfo.textContent = '0 / 0 email';
+    dom.paginationControls.innerHTML = `
+      <button class="pagination-btn" type="button" disabled>Trước</button>
+      <button class="pagination-btn" type="button" disabled>Sau</button>
+    `;
     return;
   }
-  copyText(mailbox.address, 'Đã copy alias');
+
+  const start = (state.currentPage - 1) * MESSAGES_PER_PAGE + 1;
+  const end = Math.min(state.currentPage * MESSAGES_PER_PAGE, total);
+  dom.paginationInfo.textContent = `${start}-${end} / ${total} email`;
+
+  const pageNumbers = buildPageNumbers(totalPages, state.currentPage);
+  const buttons = [
+    `<button class="pagination-btn" type="button" data-page-nav="prev" ${state.currentPage === 1 ? 'disabled' : ''}>Trước</button>`,
+    ...pageNumbers.map((page) => (
+      page === 'ellipsis'
+        ? '<span class="px-1 text-gray-300">...</span>'
+        : `<button class="pagination-btn ${page === state.currentPage ? 'active' : ''}" type="button" data-page="${page}">${page}</button>`
+    )),
+    `<button class="pagination-btn" type="button" data-page-nav="next" ${state.currentPage === totalPages ? 'disabled' : ''}>Sau</button>`,
+  ];
+
+  dom.paginationControls.innerHTML = buttons.join('');
+  dom.paginationControls.querySelectorAll('[data-page]').forEach((button) => {
+    button.addEventListener('click', () => goToPage(Number(button.dataset.page)));
+  });
+  dom.paginationControls.querySelectorAll('[data-page-nav]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const direction = button.dataset.pageNav;
+      goToPage(direction === 'prev' ? state.currentPage - 1 : state.currentPage + 1);
+    });
+  });
+}
+
+function goToPage(page) {
+  const nextPage = Math.max(1, Math.min(page, getTotalPages()));
+  if (nextPage === state.currentPage) {
+    return;
+  }
+  state.currentPage = nextPage;
+  renderMessages();
+  renderPagination();
+  dom.emailList.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function getVisibleMessages() {
+  const start = (state.currentPage - 1) * MESSAGES_PER_PAGE;
+  return state.messages.slice(start, start + MESSAGES_PER_PAGE);
+}
+
+function getVisibleMessageIds() {
+  return getVisibleMessages().map((message) => message.id);
+}
+
+function getVisibleSelectedMessageIds() {
+  const selectedIds = new Set(state.selectedMessageIds);
+  return getVisibleMessageIds().filter((messageId) => selectedIds.has(messageId));
+}
+
+function getDeleteTargetIds(messageId) {
+  const visibleSelectedIds = getVisibleSelectedMessageIds();
+  if (visibleSelectedIds.length > 1 && visibleSelectedIds.includes(messageId)) {
+    return visibleSelectedIds;
+  }
+  return [messageId];
+}
+
+function getRangeSelectionIds(messageId) {
+  const visibleIds = getVisibleMessageIds();
+  const anchorId = state.selectionAnchorMessageId && visibleIds.includes(state.selectionAnchorMessageId)
+    ? state.selectionAnchorMessageId
+    : state.selectedMessageId;
+
+  if (!anchorId || !visibleIds.includes(anchorId)) {
+    return [messageId];
+  }
+
+  const startIndex = visibleIds.indexOf(anchorId);
+  const endIndex = visibleIds.indexOf(messageId);
+  if (startIndex === -1 || endIndex === -1) {
+    return [messageId];
+  }
+
+  const [from, to] = startIndex <= endIndex ? [startIndex, endIndex] : [endIndex, startIndex];
+  return visibleIds.slice(from, to + 1);
+}
+
+function normalizeSelectedMessageIds(ids) {
+  const uniqueIds = Array.from(new Set(ids.map(Number).filter(Boolean)));
+  const visibleIdSet = new Set(uniqueIds);
+  const orderedVisibleIds = getVisibleMessageIds().filter((messageId) => visibleIdSet.has(messageId));
+  return orderedVisibleIds.length ? orderedVisibleIds : uniqueIds;
+}
+
+function isMessageSelected(messageId) {
+  return state.selectedMessageIds.includes(messageId);
+}
+
+function getTotalPages() {
+  return Math.max(1, Math.ceil(state.messages.length / MESSAGES_PER_PAGE));
+}
+
+function ensureValidPage() {
+  state.currentPage = Math.min(Math.max(1, state.currentPage), getTotalPages());
+}
+
+function buildPageNumbers(totalPages, currentPage) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, 'ellipsis', totalPages];
+  }
+  if (currentPage >= totalPages - 2) {
+    return [1, 'ellipsis', totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages];
+}
+
+function getAvatarPresentation(message) {
+  const aliasLocalPart = getAliasLocalPart(message.recipient_address);
+  const seed = `${message.recipient_address || ''}|${message.from_email || ''}|${message.from_name || ''}`;
+  const palette = AVATAR_PALETTES[Math.abs(hashCode(seed)) % AVATAR_PALETTES.length];
+  return {
+    background: palette.background,
+    color: palette.color,
+    label: (aliasLocalPart || message.from_name || message.from_email || '?').charAt(0).toUpperCase(),
+  };
+}
+
+function getAliasLocalPart(address) {
+  return String(address || '').split('@')[0] || '';
+}
+
+function hashCode(value) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash) + value.charCodeAt(index);
+    hash |= 0;
+  }
+  return hash;
 }
 
 function copyText(value, successMessage) {
@@ -707,18 +1255,22 @@ async function api(url, options = {}) {
   return response.text();
 }
 
-function markRecentMessages(previousIds, nextMessages) {
-  if (!state.hasLoadedMessages) {
-    pruneRecentMessageIds();
-    return;
-  }
-
+function markRecentMessages(nextMessages) {
   const now = Date.now();
   nextMessages.forEach((message) => {
-    if (!previousIds.has(message.id)) {
+    if (!state.seenMessageIds[message.id]) {
       state.recentMessageIds[message.id] = now;
+      state.seenMessageIds[message.id] = true;
     }
   });
+
+  if (!state.hasLoadedMessages) {
+    nextMessages.forEach((message) => {
+      state.seenMessageIds[message.id] = true;
+    });
+    state.recentMessageIds = {};
+  }
+
   pruneRecentMessageIds();
 }
 
@@ -746,6 +1298,39 @@ function updateRecentMessageDecorations() {
       badge.classList.toggle('hidden', !isRecent);
     }
   });
+}
+
+function buildMessageListSignature(messages) {
+  return messages.map((message) => [
+    message.id,
+    message.unread ? 1 : 0,
+    message.important ? 1 : 0,
+    message.recipient_address || '',
+    message.from_name || '',
+    message.from_email || '',
+    message.subject || '',
+    message.received_at || '',
+    (message.extracted_otps || []).length,
+    (message.extracted_links || []).length,
+  ].join('|')).join('~');
+}
+
+function formatLanguageLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  const labels = {
+    auto: 'Auto',
+    en: 'English',
+    vi: 'Tiếng Việt',
+    ja: 'Tiếng Nhật',
+    ko: 'Tiếng Hàn',
+    zh: 'Tiếng Trung',
+    fr: 'Tiếng Pháp',
+    de: 'Tiếng Đức',
+    es: 'Tiếng Tây Ban Nha',
+    ru: 'Tiếng Nga',
+    th: 'Tiếng Thái',
+  };
+  return labels[normalized] || normalized.toUpperCase() || 'Auto';
 }
 
 function escapeHtml(value) {
@@ -779,19 +1364,6 @@ function formatRelativeDate(dateStr) {
   if (hours < 24) return `${hours} giờ trước`;
   if (days < 7) return `${days} ngày trước`;
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
-}
-
-function formatAliasRelativeTime(dateStr) {
-  return formatRelativeDate(dateStr);
-}
-
-function formatShortDate(dateStr) {
-  return new Date(dateStr).toLocaleString('vi-VN', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function formatFullDate(dateStr) {

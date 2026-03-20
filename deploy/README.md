@@ -20,16 +20,29 @@ Set real values for:
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 - `IMAP_PASSWORD`
+- `SMTP_PASSWORD` if it is different from the IMAP password
 
 For the current live stack, keep:
 
 - `IMAP_HOST=mail.congmail.top`
 - `IMAP_PORT=993`
-- `MAIL_SYNC_INTERVAL_S=10`
+- `SMTP_HOST=mail.congmail.top`
+- `SMTP_PORT=587`
+- `SMTP_SECURITY=starttls`
+- `MAIL_SYNC_INTERVAL_S=4`
+- `DEFAULT_ALIAS_HOURS=1440`
+- `MESSAGE_RETENTION_DAYS=60`
 
 This app reads IMAP over the mail domain's real TLS endpoint. Do not switch back to
 `host.docker.internal`, because the temp-mail container is no longer relying on the
 host-gateway path for mail access.
+
+By default the reply/forward composer can reuse the same central mailbox credentials:
+
+- `SMTP_USERNAME=contact@congmail.top`
+- `SMTP_PASSWORD=<same as IMAP_PASSWORD>`
+- `SMTP_FROM_ADDRESS=contact@congmail.top`
+- `SMTP_FROM_NAME=LushMail`
 
 ## 3. Install helper
 

@@ -6,10 +6,10 @@
 
 ## Build / Test / Run
 
-- Dev server: `cd D:\Lush-Temp-Mail && .\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010 --reload`
-- Tests: `cd D:\Lush-Temp-Mail && .\.venv\Scripts\python.exe -m pytest -q`
-- Python syntax check: `python -m py_compile D:\Lush-Temp-Mail\backend\app\*.py`
-- Frontend syntax check: `node --check D:\Lush-Temp-Mail\app.js`
+- Dev server: chạy từ root repo với `.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8010 --reload`
+- Tests: chạy từ root repo với `.\.venv\Scripts\python.exe -m pytest -q`
+- Python syntax check: chạy từ root repo với `Get-ChildItem .\backend\app\*.py | ForEach-Object { .\.venv\Scripts\python.exe -m py_compile $_.FullName }`
+- Frontend syntax check: chạy từ root repo với `node --check .\app.js`
 - VPS helper usage: `lushtempmail status|logs|redeploy|update`
 
 ## Coding Conventions
