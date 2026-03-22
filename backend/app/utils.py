@@ -5,7 +5,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 
-LOCAL_PART_RE = re.compile(r"^[a-z0-9](?:[a-z0-9._-]{1,62}[a-z0-9])?$")
+LOCAL_PART_RE = re.compile(r"^(?:[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*)$")
 
 
 def utc_now() -> datetime:
@@ -26,6 +26,25 @@ def iso_days_ago(days: int) -> str:
 
 def normalize_address(address: str) -> str:
     return address.strip().lower()
+
+
+def normalize_lookup_address(address_or_local_part: str, default_domain: str) -> str:
+    candidate = normalize_address(address_or_local_part)
+    domain = normalize_address(default_domain)
+    if not candidate:
+        raise ValueError("Vui lòng nhập alias email")
+
+    if "@" in candidate:
+        local_part, explicit_domain = split_address(candidate)
+        if explicit_domain != domain:
+            raise ValueError(f"Chỉ hỗ trợ alias @{domain}")
+    else:
+        local_part = candidate
+
+    if not is_valid_local_part(local_part):
+        raise ValueError("Alias email không hợp lệ")
+
+    return f"{local_part}@{domain}"
 
 
 def split_address(address: str) -> tuple[str, str]:

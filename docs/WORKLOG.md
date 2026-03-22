@@ -1,5 +1,101 @@
 # Worklog
 
+## 2026-03-21 18:15 - Re-enable row checkbox without widening admin layout
+
+- Re-read project memory/rules and kept the existing compact admin header untouched, because the user only wanted checkbox selection restored inside the email rows, not another toolbar expansion.
+- Re-enabled the existing row checkbox DOM in `app.js` by removing the forced-hide behavior in `style.css`, then changed the checkbox styling to an absolute overlay anchored inside the left padding of each row so it no longer consumes list width.
+- Verified on the local admin route with a Playwright-injected sample message that the checkbox is visible again at the start of the row while the search/header layout remains unchanged.
+
+## 2026-03-21 18:05 - Deploy admin delete-all and encoding fixes to VPS
+
+- Re-read project memory/rules, then uploaded the current admin UI files (`index.html`, `app.js`, `style.css`) together with backend delete-all support (`backend/app/db.py`, `backend/app/main.py`) to `/opt/lush-temp-mail/app` on VPS `82.197.71.6`.
+- Rebuilt and restarted the live Docker stack from `/opt/lush-temp-mail/app/deploy`, bringing `lushtempmail-app` back up successfully after the image rebuild.
+- Verified the public site at `https://lush.congmail.top/` now serves the updated admin HTML containing the entity-based search placeholder and delete-all tooltip, and re-checked `https://lush.congmail.top/api/health` returning `status: ok`.
+
+## 2026-03-21 18:02 - Make admin Vietnamese strings encoding-proof with entities and unicode escapes
+
+- Re-read project memory/rules, then switched the latest admin text fixes to encoding-proof representations because direct Vietnamese literals had already been degraded into `?` during prior edits.
+- Replaced the admin search placeholder and delete-all tooltip in `index.html` with HTML entities, and rewrote the delete-all confirm/toast strings in `app.js` using `\\u` escapes so browser rendering no longer depends on terminal/source code page behavior.
+- Verified with `node --check app.js` plus a browser run on `http://127.0.0.1:8010/` that `#mainSearch.placeholder` resolves to `TÃ¬m theo alias, sender, subject...` and `#deleteAllBtn.title` resolves to `XÃ³a táº¥t cáº£ email trong inbox hiá»‡n táº¡i`.
+
+## 2026-03-21 17:54 - Fix mojibake on admin delete-all texts
+
+- Re-read project memory/rules, then traced the broken admin copy to mojibake introduced in the last toolbar edits rather than a browser rendering issue.
+- Corrected the visible admin header strings around `mainSearch` and `deleteAllBtn`, plus the delete-all confirm/toast copy in `app.js`, so those user-facing texts are back to valid Vietnamese UTF-8.
+- Verified syntax again with `node --check app.js` after the text-only corrections.
+
+## 2026-03-21 17:41 - Restore admin header layout and keep only delete-all icon
+
+- Re-read project memory/rules, then rolled back the over-expanded admin toolbar after the user clarified that the header should keep the previous layout and only swap the old refresh icon for a delete-all icon.
+- Restored the compact header structure in `index.html` so the admin list area is back to `title + count + search + one icon button` instead of the added multi-action strip.
+- Kept the new delete-all behavior with confirm in `app.js`, but downgraded the extra checkbox-selection affordance to a visual no-op so the prior row layout is preserved while the broader backend delete-by-scope API remains available.
+- Verified locally with `node --check app.js` and a Playwright admin login smoke that the toolbar now renders with search plus a single delete-all icon button and no `select-page` / `delete-selected` controls.
+
+## 2026-03-21 17:31 - Redesign admin delete actions with checkbox selection and full-scope delete-all
+
+- Re-read project memory/rules, re-used the existing admin palette/components, and applied the `uncodixfy` constraint so the inbox toolbar stayed flat and utility-first instead of turning into another decorative action strip.
+- Added a new backend delete-all path for admin inbox scope by introducing `db.delete_messages_by_scope(...)` plus `DELETE /api/messages`, which removes every message matching the current `filter/search` query instead of only the current client page.
+- Reworked the admin toolbar to replace the old manual refresh button with `Chá»n trang`, `XÃ³a Ä‘Ã£ chá»n`, and `XÃ³a táº¥t cáº£`, while adding explicit confirm text before `XÃ³a táº¥t cáº£` runs.
+- Added checkbox affordances at the start of each email row and wired them into the existing page-scoped multi-select state so the checkbox flow now matches the earlier keyboard shortcuts instead of hiding that behavior behind `Ctrl/Shift/Delete`.
+- Verified with `node --check app.js`, `python -m py_compile backend/app/db.py backend/app/main.py`, a `TestClient` smoke for `DELETE /api/messages`, and a local Playwright login smoke that the new toolbar buttons render on the admin route.
+
+## 2026-03-21 15:21 - Redeploy updated user.html to VPS
+
+- Re-read project memory/rules, then uploaded the locally edited `user.html` directly to `/opt/lush-temp-mail/app/user.html` on VPS `82.197.71.6`.
+- Rebuilt and restarted the live Docker stack from `/opt/lush-temp-mail/app/deploy` so the static user route picked up the new HTML content.
+- Verified the public `https://lush.congmail.top/user.html` response now serves the updated user-facing copy, including the revised meta description and hero text from the local file.
+
+## 2026-03-21 16:11 - Refine user inbox rows to normal mailbox style
+
+- Re-read project memory/rules and reapplied the `uncodixfy` constraint so the inbox list stayed simple, flat, and aligned with the existing admin app instead of drifting into decorative card styling.
+- Reworked `user.js` list rendering to prioritize sender name, subject, and a single-line preview, while changing avatar initials to derive from the sender instead of the alias so each row reads like a normal inbox message.
+- Updated `user.css` so list/detail avatars are circular, row spacing is tighter, hover/selected states are calmer, and the message metadata hierarchy matches a familiar mailbox layout.
+- Verified the frontend with `node --check user.js`, then used the local route at `http://127.0.0.1:8010/user.html` plus injected sample data in Playwright to confirm the new row structure and detail header render correctly.
+
+## 2026-03-21 16:17 - Auto-scroll lookup into inbox view
+
+- Re-read project memory/rules, then adjusted the user lookup flow so a manual `Kiá»ƒm tra` now scrolls the page down to the results shell after data loads.
+- Added a dedicated `scrollToLookupResults()` helper in `user.js` that positions the viewport above the list/detail area with a fixed offset, intentionally leaving the alias input still visible at the top instead of hiding the entire hero block.
+- Kept silent bootstraps from query params unchanged so only direct user-triggered lookups perform the smooth scroll.
+- Verified with `node --check user.js` and a Playwright local smoke that the viewport lands with the form still visible (`formBottom = 59`) while the inbox shell is already in view (`shellTop = 171`).
+
+## 2026-03-21 16:22 - Rebalance post-lookup spacing and redeploy
+
+- Paused the in-progress VPS redeploy, then refined the user-route auto-scroll again after reviewing the user's screenshot: the previous offset hid too much of the lookup form and made the gap to the browser chrome feel cramped.
+- Updated `user.js` so `scrollToLookupResults()` now anchors to `lookupForm` with a smaller top offset, which keeps the full input area visible while the inbox shell still appears immediately underneath.
+- Bumped the cache-busting asset version in `user.html` to `user-inbox-scroll-4`, uploaded the refreshed `user.html` / `user.js` to `/opt/lush-temp-mail/app`, and rebuilt the live Docker stack from `/opt/lush-temp-mail/app/deploy`.
+- Verified production with `https://lush.congmail.top/api/health` returning `status: ok` and `https://lush.congmail.top/user.html` serving the new asset version `user.js?v=20260321-user-inbox-scroll-4`.
+
+## 2026-03-21 16:34 - Redeploy latest user.js edit to VPS
+
+- Re-read project memory/rules, then picked up the latest local `user.js` edit exactly as saved by the user for a targeted VPS deploy.
+- Bumped the static asset version in `user.html` from `user-inbox-scroll-4` to `user-js-redeploy-5` so production browsers would not keep serving a cached copy of the previous JavaScript file.
+- Uploaded the refreshed `user.js` and `user.html` to `/opt/lush-temp-mail/app`, rebuilt the Docker stack from `/opt/lush-temp-mail/app/deploy`, and confirmed container `lushtempmail-app` came back up successfully.
+- Verified live that `https://lush.congmail.top/user.html` now references `user.js?v=20260321-user-js-redeploy-5` and that `https://lush.congmail.top/api/health` still returns `status: ok`.
+
+## 2026-03-21 16:59 - Investigate mail delay and add sync-on-check for user route
+
+- Investigated the live path end-to-end: code review showed `/api/public/inbox` reads directly from SQLite with no backend cache, `received_at` was being derived from the email `Date` header, and the app container was polling IMAP every 4 seconds from the mailbox.
+- Verified on VPS that recent Gmail samples were not arriving slowly into the central mailbox: for example UID `21` (`pearhoang99g@gmail.com -> test2@congmail.top`) had IMAP `INTERNALDATE` `21-Mar-2026 10:43:38 +0100`, while SQLite already held the same mail as message `26084` with `received_at` `2026-03-21T09:43:29+00:00`, a gap of only about 9 seconds.
+- Identified the real user-path weakness: manual user lookup only queried `/api/public/inbox`, so it could miss up to one IMAP polling cycle if the message had reached the mailbox just after the previous background sync.
+- Implemented a serialized sync path by adding a lock inside `MailSyncService.sync_once()`, exposing `POST /api/public/sync` for role `user`, and updating `user.js` so clicking `Kiá»ƒm tra` now triggers a live IMAP sync before reading the inbox.
+- Deployed the backend/frontend changes to VPS, bumped the `user.js` asset version to `20260321-public-sync-6`, and verified production with `POST /api/public/sync` under the `user` session returning `{\"ok\":true,\"synced\":1}` plus `api/health` staying `ok`.
+
+## 2026-03-21 15:00 - Fix VPS helper permission issue for set-user
+
+- Reproduced the live VPS error where `lushtempmail set-user ...` failed with `Permission denied` because the helper invoked `deploy/scripts/set_admin_credentials.sh` directly while that file lacked an execute bit after deploy.
+- Fixed the immediate runtime issue on VPS by restoring execute permission on the deploy scripts and reinstalling the global `lushtempmail` helper.
+- Patched `deploy/scripts/lushtempmail.sh` locally to invoke the credential script via `bash` for both `set-admin` and `set-user`, preventing future deploys from depending on file execute bits.
+- Verified on VPS by running `lushtempmail set-user --username user --password 1234`, confirming `.env` updated and the app redeployed successfully, then smoke-tested live login for `user`.
+
+## 2026-03-21 14:56 - Deploy admin/user split to VPS
+
+- Re-read project memory/rules, then packaged the current local runtime diff and uploaded the updated frontend, backend, deploy scripts, and project docs directly to `/opt/lush-temp-mail/app` on VPS `82.197.71.6`.
+- Added `USER_USERNAME=user` and a new production `USER_PASSWORD` into the live `deploy/.env` by running the updated `set_admin_credentials.sh --role user ...`, which also rebuilt and restarted the Docker stack.
+- Reinstalled the global `lushtempmail` helper from the live repo so the VPS command set now includes `set-user` in addition to the existing admin commands.
+- Verified container health from inside the live stack via `/api/health`, then smoke-tested `https://lush.congmail.top` with Playwright: `user` now lands on `user.html` and sees `ÄÄƒng xuáº¥t`, while `admin` still lands on `/`.
+- Updated local-only password notes in `deploy/LOCAL_PASSWORDS.md` so the new production `user` credential is available on this machine without committing it to git.
+
 ## 2026-03-20 16:35 - Rule Bootstrap
 
 - Scanned `D:\Lush-Temp-Mail` and confirmed repo currently contains only static UI files with no backend/toolchain.
@@ -50,21 +146,21 @@
 ## 2026-03-20 17:03 - Auto refresh and relative time ticker
 
 - Added frontend auto-refresh while the admin tab is visible, with a silent refresh path that preserves the currently opened message instead of resetting the detail pane.
-- Added a separate relative-time ticker so labels like `Vừa xong` and `14 phút trước` update on screen without requiring a manual refresh.
+- Added a separate relative-time ticker so labels like `Vá»«a xong` and `14 phÃºt trÆ°á»›c` update on screen without requiring a manual refresh.
 - Lowered the recommended backend IMAP sync interval from 20s to 10s in deploy defaults, then applied the same setting on the live VPS runtime.
 - Synced the updated `app.js` and deploy docs to VPS, redeployed `lushtempmail-app`, and prepared the live app for a hard-reload test in the browser.
 
 ## 2026-03-20 17:18 - New mail emphasis and flicker removal
 
 - Reworked the temp-mail frontend refresh flow so silent auto-refresh now performs a real `/api/sync` cycle every 8 seconds while the tab is visible.
-- Added recent-message tracking on the client, with a visible `Email mới` badge and stronger row highlight for newly arrived mail in `Mail feed`.
+- Added recent-message tracking on the client, with a visible `Email má»›i` badge and stronger row highlight for newly arrived mail in `Mail feed`.
 - Replaced the old list re-render used by the relative-time ticker with DOM-only label updates, and stopped re-fetching/re-rendering the open message detail during silent refresh to remove the flicker effect.
 - Synced the new `app.js` and `style.css` to VPS and redeployed `lushtempmail-app`.
 
 ## 2026-03-20 17:28 - Tone down new-mail styling
 
 - Removed the bright row highlight and pulse animation from new-mail styling in the message list.
-- Kept only the `Email mới` badge so the inbox returns to the previous neutral look.
+- Kept only the `Email má»›i` badge so the inbox returns to the previous neutral look.
 - Synced the updated `style.css` to VPS and redeployed `lushtempmail-app`.
 
 ## 2026-03-20 17:35 - Publish repo to GitHub
@@ -126,21 +222,21 @@
 
 ## 2026-03-20 20:17 - Important inbox group, 60-day retention, and composer polish
 
-- Added `Quan trọng` filter end-to-end: SQLite auto-migration for `messages.important`, API toggle endpoint, hover star action in the inbox row, and star persistence in the live UI.
+- Added `Quan trá»ng` filter end-to-end: SQLite auto-migration for `messages.important`, API toggle endpoint, hover star action in the inbox row, and star persistence in the live UI.
 - Changed inbox row actions so the delete control now uses the same icon-only visual language as the mail tab icon, while OTP rows keep the star visible and the alias-first ordering remains intact.
 - Added reply/forward composer UI inside the email detail pane with `To`, `CC`, `Subject`, and `Message` fields styled to match the current Tailwind-based shell.
-- Changed alias lifetime defaults to `60 ngày` (`DEFAULT_ALIAS_HOURS=1440`) and message cleanup to `60 ngày` (`MESSAGE_RETENTION_DAYS=60`) for both local code and live VPS runtime.
+- Changed alias lifetime defaults to `60 ngÃ y` (`DEFAULT_ALIAS_HOURS=1440`) and message cleanup to `60 ngÃ y` (`MESSAGE_RETENTION_DAYS=60`) for both local code and live VPS runtime.
 - Updated root `AGENTS.md` build/test commands to be repo-relative instead of the stale `D:` path from the older local workspace.
-- Verified locally with `node --check .\\app.js` and Python compile checks, then verified live at `https://lush.congmail.top` after login that `Quan trọng`, star toggle, icon-only delete, and the composer panel are present and working.
+- Verified locally with `node --check .\\app.js` and Python compile checks, then verified live at `https://lush.congmail.top` after login that `Quan trá»ng`, star toggle, icon-only delete, and the composer panel are present and working.
 
 ## 2026-03-20 20:36 - Detail pane layout polish and recent-badge stability
 
 - Reworked the desktop reading pane to use the remaining right-side width instead of the old fixed 420px column, with a wider centered reader shell and calmer card spacing.
-- Removed the awkward `Email actions` card from the top of the mail content and moved `Trả lời` / `Chuyển tiếp` into a dedicated action bar at the bottom of the detail flow.
+- Removed the awkward `Email actions` card from the top of the mail content and moved `Tráº£ lá»i` / `Chuyá»ƒn tiáº¿p` into a dedicated action bar at the bottom of the detail flow.
 - Adjusted the compose panel so reply/forward drafts now open inline above the bottom action bar, keeping `CC` and the Tailwind visual language intact.
-- Changed recent-message tracking from per-filter comparison to session-wide seen-message tracking so switching between `Tất cả email` and `Có OTP` no longer marks old rows as `Email mới` again.
+- Changed recent-message tracking from per-filter comparison to session-wide seen-message tracking so switching between `Táº¥t cáº£ email` and `CÃ³ OTP` no longer marks old rows as `Email má»›i` again.
 - Added render suppression for unchanged inbox lists, which keeps the same DOM rows across auto-refresh cycles and removes the hover flicker caused by unnecessary re-renders.
-- Verified locally with `node --check .\\app.js`, then redeployed the frontend to VPS and confirmed on the live inbox that the detail pane is wider, the action bar sits at the bottom, filter switching keeps `Email mới` stable, and the first row node stays unchanged across auto-refresh when data does not change.
+- Verified locally with `node --check .\\app.js`, then redeployed the frontend to VPS and confirmed on the live inbox that the detail pane is wider, the action bar sits at the bottom, filter switching keeps `Email má»›i` stable, and the first row node stays unchanged across auto-refresh when data does not change.
 
 ## 2026-03-20 20:40 - Push detail scroll to viewport edge and restore message-list width
 
@@ -172,14 +268,14 @@
 ## 2026-03-20 21:01 - Remove `Mail body` label from detail pane
 
 - Removed the extra English heading `Mail body` from the email content section in the detail pane.
-- Kept the Vietnamese section kicker `Nội dung email` and left the rest of the detail layout unchanged.
+- Kept the Vietnamese section kicker `Ná»™i dung email` and left the rest of the detail layout unchanged.
 - Rebuilt and redeployed the live app so the label disappears immediately after refresh.
 
 ## 2026-03-20 21:11 - Pin detail reply actions to footer and jump into composer
 
-- Reworked the detail pane into a two-part shell: a scrollable content region and a fixed footer action bar for `Trả lời` / `Chuyển tiếp`.
+- Reworked the detail pane into a two-part shell: a scrollable content region and a fixed footer action bar for `Tráº£ lá»i` / `Chuyá»ƒn tiáº¿p`.
 - Moved the active composer to the top of the detail flow so reply/forward mode becomes the primary context instead of appearing below the original email body.
-- Added automatic scroll-to-top plus input focus when opening the composer, so clicking `Trả lời` from the footer immediately lands the user in the reply form.
+- Added automatic scroll-to-top plus input focus when opening the composer, so clicking `Tráº£ lá»i` from the footer immediately lands the user in the reply form.
 - Verified on the live app with a long `Undeliverable` email that the footer stays fixed while only the detail content scrolls, and that reply mode resets `scrollTop` to `0` with the composer visible near the top of the panel.
 
 ## 2026-03-20 21:23 - Enable real SMTP send for reply/forward composer
@@ -188,12 +284,12 @@
 - Added backend SMTP config defaults/fallbacks plus a new `backend/app/mailer.py` service to send composed messages with `To`, `CC`, `Subject`, `Body`, and reply threading headers when available.
 - Added `POST /api/messages/{message_id}/send` and connected the frontend composer send button to that API, including loading state, success toast, and composer close-on-success.
 - Fixed a real delivery issue by adding the missing `Date` header after the first smoke test was rejected by the mail content filter as `BAD HEADER`.
-- Verified end-to-end on the live app: forwarded a real email to alias `codexsend1774016575967@congmail.top`, saw `Đã gửi chuyển tiếp`, and confirmed the forwarded message appeared back in the inbox on the first refresh cycle.
+- Verified end-to-end on the live app: forwarded a real email to alias `codexsend1774016575967@congmail.top`, saw `ÄÃ£ gá»­i chuyá»ƒn tiáº¿p`, and confirmed the forwarded message appeared back in the inbox on the first refresh cycle.
 
 ## 2026-03-20 21:40 - Flatten composer visuals and split send-button styles
 
 - Kept the composer logic and SMTP send flow intact, but separated the visual treatment of the send buttons by mode.
-- Changed `Gửi chuyển tiếp` to a white button with a light neutral border, while keeping `Gửi trả lời` on the existing orange primary style.
+- Changed `Gá»­i chuyá»ƒn tiáº¿p` to a white button with a light neutral border, while keeping `Gá»­i tráº£ lá»i` on the existing orange primary style.
 - Removed the orange-tinted composer surface and switched the form fields to a flatter white treatment with a soft neutral border and no orange glow on focus.
 - Redeployed only the updated frontend files to VPS and verified live that forward is white, reply remains orange, the composer background is flat white, and the textarea/input outline no longer looks blurry.
 
@@ -201,7 +297,7 @@
 
 - Added a global `keydown` handler in the frontend so pressing `Delete` removes the currently selected email row through the same delete flow used by the hover trash icon.
 - Guarded the shortcut so it does nothing while focus is inside `input`, `textarea`, `select`, or editable content, avoiding accidental deletes during reply/forward editing.
-- Redeployed the updated `app.js` to VPS and verified live that selecting a row then pressing `Delete` opens the existing confirm dialog `Xóa email này khỏi dashboard?`.
+- Redeployed the updated `app.js` to VPS and verified live that selecting a row then pressing `Delete` opens the existing confirm dialog `XÃ³a email nÃ y khá»i dashboard?`.
 
 ## 2026-03-20 21:58 - Add page-scoped multi-select like desktop file lists
 
@@ -235,3 +331,129 @@
 - Reviewed the git worktree, confirmed the active branch is `main`, and kept runtime-only files like `run.err` / `run.log` out of the commit.
 - Prepared a single source-control sync for the current live/local state so GitHub matches the deployed inbox, composer, multi-select, and translation features.
 - Proceeded to stage, commit, and push the tracked application/backend/docs files to `origin/main`.
+
+## 2026-03-21 12:43 - Pull latest changes from origin/main
+
+- Re-read root rules and project memory before running the source-control sync task, per project process.
+- Confirmed `D:\Lush-Temp-Mail` was on branch `main` with a clean worktree tracking `origin/main`.
+- Pulled remote updates with `git pull --ff-only origin main`, moving the repo from `2cb069f` to `ef65da9` without creating a merge commit.
+- Synced upstream changes across frontend, backend, deploy docs, and project memory files, then re-checked that the worktree stayed clean after the pull.
+
+## 2026-03-21 14:13 - Add user-facing alias inbox page
+
+- Added a separate user-facing route at `user.html` with a premium lookup hero, alias-driven inbox list, right-side reading pane, mobile detail drawer, and styling aligned to the current admin app's fonts, Tailwind palette, and Lucide icon language.
+- Added `user.js` to handle exact-alias lookup, fast summary-list loading, detail fetching, translation toggle, auto-refresh for the active alias, URL query sync, and empty/loading/toast states without reusing admin-only logic.
+- Extended the backend with `/api/public/inbox`, `/api/public/messages/{message_id}`, and `/api/public/messages/{message_id}/translate`, plus exact-alias normalization helpers and SQLite queries optimized for public summary/detail reads.
+- Added SQLite indexes for `recipient_address` / `received_at` and `alias_id` / `received_at`, and removed the silent 120-message truncation from the new public inbox query so the user flow can return the full alias history.
+- Verified locally with `py_compile`, `node --check app.js`, `node --check user.js`, and a Playwright smoke pass on `http://127.0.0.1:8010/user.html` for desktop + mobile empty-state behavior.
+
+## 2026-03-21 14:33 - Simplify user inbox UI with Uncodixfy rules
+
+- Read `C:\Users\Admin\.codex\skills\uncodixfy\Uncodixfy.md` and rebuilt the user-facing UI to remove floating premium-dashboard patterns, oversized radii, decorative sections, badges, refresh controls, and translate actions.
+- Reworked `user.html` into a simpler structure: dark top hero with one lookup form, then a plain white results shell that only shows after lookup, with message list on the left and detail pane on the right.
+- Rewrote `user.css` around flat panels, normal borders, restrained radii, and a cleaner white content area while keeping the admin app's font stack and orange accent color.
+- Simplified `user.js` so the user flow is now just alias lookup -> message list -> open detail, with mobile detail drawer retained and all extra UI behavior removed.
+- Re-verified locally with `node --check user.js`, `py_compile`, and a Playwright smoke pass on desktop + mobile for the simplified empty-state layout.
+
+## 2026-03-21 14:46 - Split login into admin and user flows
+
+- Re-read project memory, root/subfolder rules, and reapplied `Uncodixfy.md` so the user route stayed visually aligned with the existing admin app instead of drifting into a new UI pattern.
+- Extended backend auth/config/session handling to support both `admin` and `user`, including shared session cookies, role-aware `/api/auth/session`, shared logout, and protection of `/api/public/*` behind `require_user`.
+- Updated the root login flow so username `admin` stays on the admin dashboard while username `user` redirects to `user.html`; the login form copy is now generic instead of admin-only.
+- Replaced the top-right `Admin` button on `user.html` with `ÄÄƒng xuáº¥t`, and updated `user.js` to require a `user` session, include cookies on inbox requests, redirect unauthorized access back to `/`, and clear stale detail cache between alias lookups.
+- Updated deploy docs/helpers for the new credential contract by adding `USER_USERNAME` / `USER_PASSWORD` to `.env.example`, documenting the new flow in `deploy/README.md`, and extending the helper to support both `lushtempmail set-admin` and `lushtempmail set-user`.
+- Verified with `py_compile`, `node --check .\\app.js`, `node --check .\\user.js`, a FastAPI `TestClient` auth smoke covering both roles, and a Playwright browser smoke on `http://127.0.0.1:8011/` confirming `user` redirects into `user.html` and shows the `ÄÄƒng xuáº¥t` button while `admin` remains on `/`.
+## 2026-03-21 18:34 - Align admin checkbox to avatar lane
+
+- Re-read repo rules, project memory, and the existing admin checkbox decision before touching the inbox row layout.
+- Traced the live/local mismatch to the checkbox being vertically centered against the full row height, which only looked acceptable on short local sample rows but drifted downward on the taller real inbox rows rendered on VPS.
+- Updated the admin inbox markup/CSS so the checkbox no longer carries the extra `mt-1` class and is pinned to a fixed top offset aligned to the avatar lane instead of `top: 50%`.
+- Re-verified with `node --check app.js`, local `api/health`, and a Playwright DOM probe using a multi-line synthetic inbox row to confirm the checkbox center now matches the avatar center while the header and list width stay unchanged.
+## 2026-03-21 18:43 - Fix alias lookup for 2-char local parts and decode MIME headers
+
+- Re-read project memory and traced the two regressions separately instead of assuming they came from the checkbox/layout change.
+- Confirmed `/api/public/inbox?alias=12@congmail.top` was returning `400` because the local-part regex only allowed length `1` or `>=3`, accidentally rejecting 2-character aliases that already existed in the inbox.
+- Updated backend parsing so MIME-encoded `Subject` and `From` display names are decoded both at IMAP import time and again when rows are read back from SQLite, which fixes existing stored rows without needing a manual resync.
+- Re-verified with `py_compile`, a FastAPI `TestClient` login + public inbox smoke test returning `200` for `12@congmail.top`, and a direct SQLite read test showing decoded RFC2047 `from_name`/`subject` values.
+## 2026-03-21 20:31 - Audit Vietnamese text encoding and alias character support
+
+- Re-ran a source scan across root frontend files and `backend/app/*.py` using escaped-byte detection to catch mojibake patterns such as `\xc3`, `\xc4`, and `\xc2`; after fixing the remaining bad admin multi-select label in `app.js`, no suspicious source lines remained.
+- Verified locally that alias lookup now accepts 2-character local parts plus `_` and `-` forms such as `ab@congmail.top`, `a_b@congmail.top`, and `a-b@congmail.top` through both direct normalization and authenticated `/api/public/inbox` requests.
+- Confirmed the MIME decode path still works for RFC2047 Vietnamese subjects/display names during this audit, while noting the current live VPS was still on the older regex until the next deploy.
+## 2026-03-21 20:36 - Deploy encoding and alias-validation fixes to VPS
+
+- Synced the corrected backend files into the proper VPS path `backend/app/` after catching an initial bad upload target that had left production on the old regex.
+- Rebuilt the live container and verified public alias lookup on production for `12@congmail.top`, `ab@congmail.top`, `a_b@congmail.top`, and `a-b@congmail.top`, all returning `200` after deploy.
+- Verified the live admin API with the current production admin credentials and confirmed `raw_count = 0` for message rows whose `subject` or `from_name` would previously have shown undecoded MIME headers.
+## 2026-03-21 20:44 - Allow trailing underscore and hyphen in alias lookup
+
+- Followed up on a new real-world alias example from production where `1_@congmail.top` existed in the admin inbox but the user lookup flow still rejected it.
+- Confirmed the regex had only been relaxed for 2-character aliases and internal `_` / `-`, while still forcing the final character to be alphanumeric.
+- Updated alias validation so local-parts may end in `_` or `-` but still cannot end in `.`; verified with direct normalization plus authenticated `/api/public/inbox` tests for `1_@congmail.top`, `1-@congmail.top`, and `1.@congmail.top`.
+## 2026-03-21 20:49 - Expand alias lookup to RFC-safe special characters
+
+- Broadened the alias validation rule from the previous `_` / `-`-focused patch to a practical dot-atom pattern that accepts common email local-part special characters used on real sites.
+- Verified local lookup acceptance for aliases containing `_`, `-`, `+`, `=`, `%`, and apostrophe, while still rejecting malformed dot cases such as leading `.`, trailing `.`, or consecutive `..`.
+- Rechecked the authenticated user inbox route so these aliases return `200` through `/api/public/inbox` instead of being blocked by frontend-facing validation errors.
+## 2026-03-21 21:02 - Switch mail sync toward IMAP IDLE with polling fallback
+
+- Compared the current architecture against a direct mail-server hook and chose `IMAP IDLE` because it keeps catch-all delivery unchanged, avoids coupling mail acceptance to app uptime, and still provides near-realtime pickup from the central mailbox.
+- Added backend runtime support for `MAIL_IDLE_ENABLED` / `MAIL_IDLE_TIMEOUT_S`, plus an `IMAP IDLE` wait loop with capability detection and automatic fallback to the existing polling path if the server drops or does not support `IDLE`.
+- Changed the admin frontend refresh behavior so login still performs one force sync, but the steady-state auto refresh now polls only the app database every 2 seconds instead of forcing a full IMAP sync on each tick.
+- Updated deploy docs/example env for the new runtime knobs and bumped the admin asset version so browsers fetch the new `app.js` immediately after deploy.
+
+## 2026-03-21 21:40 - Add SSE inbox refresh and stale-only user sync
+
+- Re-read project memory/rules, kept the new `IMAP IDLE` backend in place, and added a lightweight in-memory event broker so backend inbox mutations can notify browser tabs without introducing WebSocket complexity or changing the mail path.
+- Extended the backend with `/api/events`, `/api/public/events`, and `/api/mail-sync/status`; `MailSyncService` now exposes heartbeat/status data, publishes alias/global events after imported mail, and admin delete flows publish inbox change events too.
+- Updated `app.js` so admin tabs open an `EventSource` stream for near-immediate list refresh, while reducing timer-based refresh to a slower fallback instead of the primary mechanism.
+- Updated `user.js` so manual lookup checks backend liveness first and only calls `/api/public/sync` when the mail watcher is stale; once an alias is open, the user page now listens to alias-scoped `SSE` updates and refreshes the inbox without requiring another click.
+- Verified locally with `py_compile`, `node --check`, a direct async smoke on the new SSE generators, then deployed the changed files to VPS and re-verified `health`, asset versions, `/api/mail-sync/status`, `/api/events`, and `/api/public/events` on `https://lush.congmail.top`.
+
+## 2026-03-21 21:56 - Fix IMAP IDLE tag handling and measure live pickup latency
+
+- Investigated live production after the user reported slower mail appearance, and found a real backend issue in `IMAP IDLE`: the code was sending the raw `imaplib` tag through Python string formatting, which turned a bytes tag into a literal like `b'CIJC4'` and caused `imaplib.IMAP4.abort` when `IDLE` completed.
+- Patched `backend/app/imap_sync.py` to handle `imaplib` tags as bytes correctly for both entering `IDLE` and waiting for the tagged completion response, then rebuilt and redeployed the app container on VPS.
+- Re-checked live watcher status after deploy: `mode=idle`, `idle_active=true`, `is_stale=false`, with no fresh `IMAP4.abort` trace in the recent logs.
+- Ran a production probe by sending a fresh SMTP message from the VPS mail credentials into a brand-new alias and polling the live user inbox API; the message became visible through `https://lush.congmail.top/api/public/inbox` in about `1.44s`, showing the current `mailbox -> app -> DB -> API` path is fast after the fix.
+
+## 2026-03-21 22:01 - Measure real timestamps against Gmail and production logs
+
+- Pulled recent real Gmail deliveries from the live mailserver logs and matched them by `Message-ID` with rows in the production SQLite database.
+- Confirmed the mailserver side is very fast once Gmail hands the message to the VPS: recent Gmail samples from `hoangleea99@gmail.com` were accepted, filtered, and stored into Dovecot `INBOX` in roughly `100-200ms` on the mail stack.
+- Found an important metric caveat: the app's `messages.received_at` is not a strict mailbox-ingest timestamp, so it can differ by a couple of seconds from Dovecot store time because it reflects parsed message time from the email itself.
+- Measured a fresh end-to-end production probe on a new alias via the public inbox API and saw it become visible in about `1.44s`, which indicates the current post-mailbox path is fast and that any remaining long waits are more likely upstream at the sender hop than inside the app/UI path.
+
+## 2026-03-21 22:10 - Persist mailbox and ingest timestamps for future latency debugging
+
+- Added two explicit message timing fields to the data model: `mailbox_received_at` from IMAP `INTERNALDATE`, and `ingested_at` for the moment the app writes the message into SQLite.
+- Updated the SQLite bootstrap/migration path in `backend/app/db.py` to add both columns for existing deployments and backfill old rows with best-effort values so production can migrate in-place on restart.
+- Changed the IMAP fetch path in `backend/app/imap_sync.py` to request `INTERNALDATE`, parse it, and store it alongside the existing header-derived `received_at`.
+- Added a lightweight admin-only debug endpoint `/api/debug/message-timings` so recent timing rows can be inspected over HTTPS without SSHing into the VPS database manually.
+- Verified locally with `py_compile` and `TestClient`, then deployed to VPS and confirmed a fresh production probe mail recorded distinct timing fields, including `ingested_at` one second after `mailbox_received_at`.
+
+## 2026-03-21 22:17 - Fix public inbox regression after timing-column rollout
+
+- Investigated the user-facing crash `Failed to execute 'text' on 'Response': body stream already read` and traced it to two stacked issues introduced by the timing-column rollout.
+- Fixed the real backend regression first: `list_public_messages()` still selected the old summary column set, while `row_to_message_summary()` had already started reading `mailbox_received_at` / `ingested_at`, which caused a production `IndexError` and a `500` on `/api/public/inbox`.
+- Hardened both frontend `api()` helpers (`user.js`, `app.js`) to read error bodies exactly once, so future backend failures surface the real response detail instead of the misleading browser error about an already-read body stream.
+- Bumped the static asset versions in `user.html` and `index.html`, redeployed the app, and verified live that `GET /api/public/inbox?alias=1_@congmail.top` now returns `200` again with the updated JS bundle references.
+
+## 2026-03-21 22:22 - Verify live user inbox error is cleared
+
+- Re-read project memory, then re-checked production after the user reported the earlier `body stream already read` crash screenshot.
+- Verified directly on live API that `POST /api/auth/login` for role `user` still succeeds and `GET /api/public/inbox?alias=1_@congmail.top` now returns `200` with inbox data instead of `500`.
+- Opened the real browser flow on `https://lush.congmail.top/user.html`, logged in as `user`, searched `1_@congmail.top`, and confirmed the message list plus reading pane render normally with no remaining runtime error on the lookup path.
+
+## 2026-03-21 22:29 - Measure latest production mail timing with new timestamp fields
+
+- Re-read project memory, then queried the live admin debug endpoint `/api/debug/message-timings?limit=8` to identify the newest real Gmail delivery currently in production.
+- Matched the latest row (`id=33598`, alias `1-@congmail.top`, `Message-ID=<CAJSR+axPzdoN2Hv7zutQLZXJPHD9MqKLwEHDwp+e6S_BeOw=ZA@mail.gmail.com>`) against `docker logs` from `mailstack-mailserver-1` to get precise postfix/amavis/dovecot receive/store timestamps.
+- Confirmed the concrete timing split for this real message: mailserver accepted/processed it around `2026-03-21 15:18:06Z`, Dovecot stored it at `2026-03-21 15:18:06.411Z`, and the app inserted it into SQLite at `2026-03-21 15:18:06.964953Z`, so the `mailbox -> app DB` hop took roughly `0.55s`.
+- Recorded that the currently measurable slow/fast boundary is now clear: the internal mailserver + app ingestion path is fast for this sample, while any larger wait still has to come from the sender-side handoff before the VPS receives the message.
+
+## 2026-03-22 09:07 - Sync deployed worktree to GitHub
+
+- Re-read project memory and checked both local repo state plus the live VPS app path before pushing, to avoid assuming the deployed server folder was itself a git checkout.
+- Confirmed `/opt/lush-temp-mail/app` on VPS is not a git repository, so the correct push source is the local repo worktree that already contains the deployed code and the latest project memory updates.
+- Re-ran backend/frontend syntax checks, excluded scratch files like `.tmp_*` from version control, and prepared a single git commit that captures the current deployed backend, frontend, deploy helper, and docs state for GitHub.

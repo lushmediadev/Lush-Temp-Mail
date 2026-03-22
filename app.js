@@ -22,9 +22,13 @@ let mainSearchTimer = null;
 let autoRefreshTimer = null;
 let refreshPromise = null;
 let relativeTimeTimer = null;
+let adminEventsSource = null;
+let adminEventReconnectTimer = null;
+let adminEventVersion = 0;
 
-const AUTO_VIEW_REFRESH_MS = 3000;
+const AUTO_VIEW_REFRESH_MS = 15000;
 const RELATIVE_TIME_REFRESH_MS = 10000;
+const STREAM_RECONNECT_DELAY_MS = 2500;
 const NEW_MESSAGE_HIGHLIGHT_MS = 180000;
 const MESSAGES_PER_PAGE = 12;
 const AVATAR_PALETTES = [
@@ -48,7 +52,7 @@ function cacheDom() {
     'loginPage', 'appPage', 'loginForm', 'loginEmail', 'loginPassword', 'loginError', 'logoutBtn',
     'mailNav', 'folderTitle', 'folderCount', 'emailList', 'emptyState', 'detailContent',
     'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay', 'sidebarToggle',
-    'closeSidebarBtn', 'mainSearch', 'refreshBtn', 'toast',
+    'closeSidebarBtn', 'mainSearch', 'deleteAllBtn', 'toast',
     'toastMsg', 'closeMobileDetailBtn', 'paginationInfo', 'paginationControls',
   ];
   ids.forEach((id) => { dom[id] = document.getElementById(id); });
@@ -60,7 +64,7 @@ function bindEvents() {
   dom.sidebarToggle.addEventListener('click', openSidebar);
   dom.closeSidebarBtn.addEventListener('click', closeSidebar);
   dom.sidebarOverlay.addEventListener('click', closeSidebar);
-  dom.refreshBtn.addEventListener('click', () => refreshData({ silent: false, forceSync: true }));
+  dom.deleteAllBtn.addEventListener('click', () => deleteAllMessagesInScope().catch(handleError));
   dom.mainSearch.addEventListener('input', onMainSearchChange);
   dom.closeMobileDetailBtn.addEventListener('click', closeMobileDetail);
 
@@ -132,8 +136,13 @@ async function bootstrapSession() {
   try {
     const payload = await api('/api/auth/session');
     state.session = payload.user;
+    if (state.session.role === 'user') {
+      window.location.replace('/user.html');
+      return;
+    }
     showApp();
-    await loadDashboard();
+    startAdminEventStream();
+    await refreshData({ silent: true, forceSync: true });
     restartAutoRefresh();
     restartRelativeTimeTicker();
   } catch {
@@ -148,13 +157,18 @@ async function onLoginSubmit(event) {
     const payload = await api('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
-        email: dom.loginEmail.value.trim(),
+        username: dom.loginEmail.value.trim(),
         password: dom.loginPassword.value,
       }),
     });
     state.session = payload.user;
+    if (state.session.role === 'user') {
+      window.location.replace('/user.html');
+      return;
+    }
     showApp();
-    await loadDashboard();
+    startAdminEventStream();
+    await refreshData({ silent: true, forceSync: true });
     restartAutoRefresh();
     restartRelativeTimeTicker();
     showToast('Đăng nhập thành công');
@@ -186,6 +200,7 @@ async function logout() {
   state.messageListSignature = '';
   stopAutoRefresh();
   stopRelativeTimeTicker();
+  stopAdminEventStream();
   showLogin();
 }
 
@@ -195,6 +210,7 @@ function showLogin() {
   dom.loginPassword.value = '';
   stopAutoRefresh();
   stopRelativeTimeTicker();
+  stopAdminEventStream();
   closeSidebar();
   resetDetail();
   lucide.createIcons();
@@ -211,13 +227,15 @@ function onVisibilityChange() {
     return;
   }
   if (document.visibilityState === 'visible') {
-    refreshData({ silent: true, forceSync: true }).catch(handleError);
+    startAdminEventStream();
+    refreshData({ silent: true, forceSync: false }).catch(handleError);
     restartAutoRefresh();
     restartRelativeTimeTicker();
     return;
   }
   stopAutoRefresh();
   stopRelativeTimeTicker();
+  stopAdminEventStream();
 }
 
 function restartAutoRefresh() {
@@ -226,7 +244,7 @@ function restartAutoRefresh() {
     return;
   }
   autoRefreshTimer = window.setInterval(() => {
-    refreshData({ silent: true, forceSync: true }).catch(handleError);
+    refreshData({ silent: true, forceSync: false }).catch(handleError);
   }, AUTO_VIEW_REFRESH_MS);
 }
 
@@ -236,6 +254,62 @@ function stopAutoRefresh() {
   }
   window.clearInterval(autoRefreshTimer);
   autoRefreshTimer = null;
+}
+
+function startAdminEventStream() {
+  stopAdminEventStream();
+  if (!state.session || state.session.role !== 'admin' || document.visibilityState !== 'visible' || typeof EventSource === 'undefined') {
+    return;
+  }
+
+  adminEventsSource = new EventSource('/api/events', { withCredentials: true });
+  adminEventsSource.addEventListener('ready', handleAdminEvent);
+  adminEventsSource.addEventListener('heartbeat', handleAdminEvent);
+  adminEventsSource.addEventListener('messages', handleAdminEvent);
+  adminEventsSource.onerror = () => {
+    scheduleAdminEventReconnect();
+  };
+}
+
+function stopAdminEventStream() {
+  if (adminEventsSource) {
+    adminEventsSource.close();
+    adminEventsSource = null;
+  }
+  if (adminEventReconnectTimer) {
+    window.clearTimeout(adminEventReconnectTimer);
+    adminEventReconnectTimer = null;
+  }
+}
+
+function scheduleAdminEventReconnect() {
+  if (adminEventReconnectTimer || !state.session || state.session.role !== 'admin' || document.visibilityState !== 'visible') {
+    return;
+  }
+  stopAdminEventStream();
+  adminEventReconnectTimer = window.setTimeout(() => {
+    adminEventReconnectTimer = null;
+    startAdminEventStream();
+  }, STREAM_RECONNECT_DELAY_MS);
+}
+
+function handleAdminEvent(event) {
+  let payload;
+  try {
+    payload = JSON.parse(event.data || '{}');
+  } catch {
+    return;
+  }
+
+  if (typeof payload.version === 'number' && payload.version > adminEventVersion) {
+    adminEventVersion = payload.version;
+  }
+
+  if (event.type !== 'messages' || document.visibilityState !== 'visible') {
+    return;
+  }
+
+  refreshData({ silent: true, forceSync: false }).catch(handleError);
 }
 
 function restartRelativeTimeTicker() {
@@ -284,11 +358,6 @@ async function refreshData(options = {}) {
     return refreshPromise;
   }
 
-  const icon = dom.refreshBtn.querySelector('i');
-  if (!silent) {
-    icon?.classList.add('spin');
-  }
-
   refreshPromise = (async () => {
     try {
       let syncPayload = null;
@@ -300,9 +369,6 @@ async function refreshData(options = {}) {
         showToast(syncPayload.synced ? `Đã đồng bộ ${syncPayload.synced} email mới` : 'Không có email mới');
       }
     } finally {
-      if (!silent) {
-        icon?.classList.remove('spin');
-      }
       refreshPromise = null;
     }
   })();
@@ -337,12 +403,7 @@ async function loadMessages(options = {}) {
   const previousSignature = state.messageListSignature;
   const previousPage = state.currentPage;
   const previousSelectedMessageId = state.selectedMessageId;
-  const params = new URLSearchParams();
-
-  params.set('filter_name', state.currentFilter);
-  if (state.mainSearch.trim()) {
-    params.set('search', state.mainSearch.trim());
-  }
+  const params = getMessageQueryParams();
 
   const payload = await api(`/api/messages?${params.toString()}`);
   markRecentMessages(payload.items);
@@ -388,6 +449,15 @@ async function loadMessages(options = {}) {
   state.hasLoadedMessages = true;
 }
 
+function getMessageQueryParams() {
+  const params = new URLSearchParams();
+  params.set('filter_name', state.currentFilter);
+  if (state.mainSearch.trim()) {
+    params.set('search', state.mainSearch.trim());
+  }
+  return params;
+}
+
 function onMainSearchChange(event) {
   clearTimeout(mainSearchTimer);
   state.mainSearch = event.target.value;
@@ -430,7 +500,13 @@ function renderMessages() {
     const starActive = message.important ? 'active' : '';
 
     return `
-      <div class="email-row ${selectedCls} ${unreadCls} ${recentCls} px-4 sm:px-6 py-4 flex items-start gap-3" data-message-id="${message.id}" data-recent-message="${isRecentMessage(message.id) ? 'true' : 'false'}">
+      <div class="email-row ${selectedCls} ${unreadCls} ${recentCls} pr-4 pl-10 sm:pr-6 sm:pl-12 py-4 flex items-start gap-3" data-message-id="${message.id}" data-recent-message="${isRecentMessage(message.id) ? 'true' : 'false'}">
+        <label class="row-checkbox" aria-label="Chọn email ${message.id}">
+          <input class="row-checkbox-input" type="checkbox" data-select-message="${message.id}" ${selectedCls ? 'checked' : ''}>
+          <span class="row-checkbox-box">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          </span>
+        </label>
         <div class="mail-avatar flex-shrink-0 mt-0.5" style="background:${avatar.background}; color:${avatar.color};">
           ${avatar.label}
         </div>
@@ -479,6 +555,12 @@ function renderMessages() {
       await deleteMessage(Number(button.dataset.deleteMessage));
     });
   });
+  dom.emailList.querySelectorAll('[data-select-message]').forEach((input) => {
+    input.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      await toggleMessageSelection(Number(input.dataset.selectMessage));
+    });
+  });
   dom.emailList.querySelectorAll('[data-toggle-important]').forEach((button) => {
     button.addEventListener('click', async (event) => {
       event.stopPropagation();
@@ -487,6 +569,7 @@ function renderMessages() {
   });
 
   lucide.createIcons();
+  updateBulkToolbar();
 }
 
 async function handleMessageRowClick(messageId, event) {
@@ -624,6 +707,73 @@ async function selectAllVisibleMessages() {
   }
 
   showToast(`Đã chọn ${nextIds.length} email`);
+}
+
+async function toggleSelectVisibleMessages() {
+  const visibleIds = getVisibleMessageIds();
+  if (!visibleIds.length) {
+    return;
+  }
+
+  if (getVisibleSelectedMessageIds().length === visibleIds.length) {
+    clearSelection();
+    showToast('\u0110\u00e3 b\u1ecf ch\u1ecdn trang n\u00e0y');
+    return;
+  }
+
+  await selectAllVisibleMessages();
+}
+
+async function deleteSelectedMessages() {
+  const targetIds = getVisibleSelectedMessageIds();
+  if (!targetIds.length) {
+    showToast('Ch\u01b0a ch\u1ecdn email \u0111\u1ec3 x\u00f3a');
+    return;
+  }
+  await deleteMessages(targetIds);
+}
+
+async function deleteAllMessagesInScope() {
+  if (!state.messages.length) {
+    showToast('Kh\u00f4ng c\u00f3 email \u0111\u1ec3 x\u00f3a');
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `${getDeleteAllScopeLabel()}\nH\u00e0nh \u0111\u1ed9ng n\u00e0y s\u1ebd x\u00f3a to\u00e0n b\u1ed9 email kh\u1edbp inbox hi\u1ec7n t\u1ea1i, kh\u00f4ng ph\u1ee5 thu\u1ed9c page \u0111ang xem.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  const params = getMessageQueryParams();
+  const payload = await api(`/api/messages?${params.toString()}`, { method: 'DELETE' });
+  state.selectedMessageId = null;
+  state.selectedMessageIds = [];
+  state.selectionAnchorMessageId = null;
+  state.selectedMessageCache = null;
+  state.composeDraft = null;
+  state.messageTranslations = {};
+  state.messageTranslationVisibility = {};
+  state.currentPage = 1;
+  resetDetail();
+  await loadMessages({ preserveDetail: true });
+  showToast(payload.deleted_count ? `\u0110\u00e3 x\u00f3a ${payload.deleted_count} email` : 'Kh\u00f4ng c\u00f3 email \u0111\u1ec3 x\u00f3a');
+}
+
+function getDeleteAllScopeLabel() {
+  if (state.mainSearch.trim()) {
+    return `X\u00f3a t\u1ea5t c\u1ea3 email kh\u00f3a "${state.mainSearch.trim()}"?`;
+  }
+
+  const labels = {
+    all: 'X\u00f3a to\u00e0n b\u1ed9 email trong h\u1ed9p th\u01b0?',
+    unread: 'X\u00f3a to\u00e0n b\u1ed9 email ch\u01b0a \u0111\u1ecdc?',
+    important: 'X\u00f3a to\u00e0n b\u1ed9 email quan tr\u1ecdng?',
+    otp: 'X\u00f3a to\u00e0n b\u1ed9 email c\u00f3 OTP?',
+    links: 'X\u00f3a to\u00e0n b\u1ed9 email c\u00f3 link verify?',
+  };
+  return labels[state.currentFilter] || 'X\u00f3a to\u00e0n b\u1ed9 email trong inbox hi\u1ec7n t\u1ea1i?';
 }
 
 async function toggleImportant(messageId) {
@@ -1044,6 +1194,39 @@ function updateHeader() {
   };
   dom.folderTitle.textContent = titles[state.currentFilter] || 'Mail feed';
   dom.folderCount.textContent = `${state.messages.length} email`;
+  if (dom.deleteAllBtn) {
+    dom.deleteAllBtn.disabled = !state.messages.length;
+  }
+}
+
+function updateBulkToolbar() {
+  const totalMessages = state.messages.length;
+  const visibleCount = getVisibleMessageIds().length;
+  const visibleSelectedCount = getVisibleSelectedMessageIds().length;
+
+  if (!dom.selectPageBtn || !dom.deleteSelectedBtn || !dom.selectionSummary) {
+    if (dom.deleteAllBtn) {
+      dom.deleteAllBtn.disabled = !totalMessages;
+    }
+    return;
+  }
+
+  dom.selectPageBtn.disabled = !visibleCount;
+  dom.selectPageBtn.classList.toggle('is-active', Boolean(visibleCount) && visibleSelectedCount === visibleCount);
+  dom.deleteSelectedBtn.disabled = !visibleSelectedCount;
+  dom.deleteAllBtn.disabled = !totalMessages;
+
+  const selectPageLabel = dom.selectPageBtn.querySelector('span');
+  if (selectPageLabel) {
+    selectPageLabel.textContent = visibleCount && visibleSelectedCount === visibleCount ? 'Bá» chá»n trang' : 'Chá»n trang';
+  }
+
+  const deleteSelectedLabel = dom.deleteSelectedBtn.querySelector('span');
+  if (deleteSelectedLabel) {
+    deleteSelectedLabel.textContent = visibleSelectedCount > 0 ? `X?a ?? ch?n (${visibleSelectedCount})` : 'X?a ?? ch?n';
+  }
+
+  dom.selectionSummary.textContent = visibleSelectedCount > 0 ? `${visibleSelectedCount} chá»n` : `${totalMessages} email`;
 }
 
 function renderPagination() {
@@ -1222,6 +1405,10 @@ function handleError(error) {
     showLogin();
     return;
   }
+  if (error?.status === 403) {
+    window.location.replace('/user.html');
+    return;
+  }
   showToast(error.message || 'Đã có lỗi xảy ra');
 }
 
@@ -1237,11 +1424,14 @@ async function api(url, options = {}) {
 
   if (!response.ok) {
     let detail = 'Request failed';
-    try {
-      const payload = await response.json();
-      detail = payload.detail || detail;
-    } catch {
-      detail = await response.text();
+    const rawText = await response.text();
+    if (rawText) {
+      try {
+        const payload = JSON.parse(rawText);
+        detail = payload.detail || detail;
+      } catch {
+        detail = rawText;
+      }
     }
     const error = new Error(detail);
     error.status = response.status;

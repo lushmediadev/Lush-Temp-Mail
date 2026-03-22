@@ -22,6 +22,7 @@ Usage:
   lushtempmail redeploy
   lushtempmail update
   lushtempmail set-admin --username <new_admin_username> [--password <new_admin_password>]
+  lushtempmail set-user --username <new_user_username> [--password <new_user_password>]
 EOF
 }
 
@@ -46,7 +47,11 @@ case "${1:-}" in
     ;;
   set-admin)
     shift
-    "${DEPLOY_DIR}/scripts/set_admin_credentials.sh" "$@"
+    bash "${DEPLOY_DIR}/scripts/set_admin_credentials.sh" "$@"
+    ;;
+  set-user)
+    shift
+    bash "${DEPLOY_DIR}/scripts/set_admin_credentials.sh" --role user "$@"
     ;;
   *)
     usage

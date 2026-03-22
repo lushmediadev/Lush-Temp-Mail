@@ -19,6 +19,8 @@ Set real values for:
 
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
+- `USER_USERNAME`
+- `USER_PASSWORD`
 - `IMAP_PASSWORD`
 - `SMTP_PASSWORD` if it is different from the IMAP password
 
@@ -30,12 +32,20 @@ For the current live stack, keep:
 - `SMTP_PORT=587`
 - `SMTP_SECURITY=starttls`
 - `MAIL_SYNC_INTERVAL_S=4`
+- `MAIL_IDLE_ENABLED=true`
+- `MAIL_IDLE_TIMEOUT_S=1500`
 - `DEFAULT_ALIAS_HOURS=1440`
 - `MESSAGE_RETENTION_DAYS=60`
 
 This app reads IMAP over the mail domain's real TLS endpoint. Do not switch back to
 `host.docker.internal`, because the temp-mail container is no longer relying on the
 host-gateway path for mail access.
+
+The recommended runtime mode is:
+
+- background `IMAP IDLE` enabled for near-realtime mailbox updates
+- `MAIL_SYNC_INTERVAL_S` kept as the fallback polling delay if `IDLE` drops or is unsupported
+- admin UI polling only the app database, not forcing a full IMAP sync on every refresh tick
 
 By default the reply/forward composer can reuse the same central mailbox credentials:
 
@@ -58,10 +68,24 @@ cd /opt/lush-temp-mail/app/deploy
 docker compose --env-file .env -f docker-compose.vps.yml up -d --build
 ```
 
+Login flow after deploy:
+
+- username `admin` goes to the admin dashboard at `/`
+- username `user` goes to the user inbox UI at `/user.html`
+- the logout button on either flow clears the same session cookie and returns to `/`
+
 ## 4a. Change admin login later
 
 ```bash
 lushtempmail set-admin --username adminmoi --password 'MatKhauMoi123'
+```
+
+If you do not pass `--password`, the script will prompt securely.
+
+## 4b. Change user login later
+
+```bash
+lushtempmail set-user --username usermoi --password 'MatKhauUser123'
 ```
 
 If you do not pass `--password`, the script will prompt securely.

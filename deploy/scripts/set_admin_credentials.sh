@@ -9,17 +9,22 @@ ENV_FILE="${DEPLOY_DIR}/.env"
 usage() {
   cat <<'EOF'
 Usage:
-  set_admin_credentials.sh --username <new_admin_username> [--password <new_admin_password>]
+  set_admin_credentials.sh [--role admin|user] --username <new_username> [--password <new_password>]
 
 If --password is omitted, the script will prompt securely.
 EOF
 }
 
+ROLE="admin"
 USERNAME=""
 PASSWORD=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --role)
+      ROLE="${2:-}"
+      shift 2
+      ;;
     --username)
       USERNAME="${2:-}"
       shift 2
@@ -40,6 +45,12 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "${ROLE}" != "admin" && "${ROLE}" != "user" ]]; then
+  echo "Invalid --role: ${ROLE}" >&2
+  usage
+  exit 1
+fi
+
 if [[ -z "${USERNAME}" ]]; then
   echo "Missing --username" >&2
   usage
@@ -52,17 +63,20 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 fi
 
 if [[ -z "${PASSWORD}" ]]; then
-  read -r -s -p "New admin password: " PASSWORD
+  read -r -s -p "New ${ROLE} password: " PASSWORD
   echo
 fi
 
-python3 - <<'PY' "${ENV_FILE}" "${USERNAME}" "${PASSWORD}"
+python3 - <<'PY' "${ENV_FILE}" "${ROLE}" "${USERNAME}" "${PASSWORD}"
 from pathlib import Path
 import sys
 
 env_path = Path(sys.argv[1])
-username = sys.argv[2]
-password = sys.argv[3]
+role = sys.argv[2].strip().lower()
+username = sys.argv[3]
+password = sys.argv[4]
+username_key = f"{role.upper()}_USERNAME"
+password_key = f"{role.upper()}_PASSWORD"
 
 lines = env_path.read_text().splitlines()
 updated = []
@@ -70,19 +84,19 @@ seen_username = False
 seen_password = False
 
 for line in lines:
-    if line.startswith("ADMIN_USERNAME="):
-        updated.append(f"ADMIN_USERNAME={username}")
+    if line.startswith(f"{username_key}="):
+        updated.append(f"{username_key}={username}")
         seen_username = True
-    elif line.startswith("ADMIN_PASSWORD="):
-        updated.append(f"ADMIN_PASSWORD={password}")
+    elif line.startswith(f"{password_key}="):
+        updated.append(f"{password_key}={password}")
         seen_password = True
     else:
         updated.append(line)
 
 if not seen_username:
-    updated.append(f"ADMIN_USERNAME={username}")
+    updated.append(f"{username_key}={username}")
 if not seen_password:
-    updated.append(f"ADMIN_PASSWORD={password}")
+    updated.append(f"{password_key}={password}")
 
 env_path.write_text("\n".join(updated) + "\n")
 PY
@@ -90,4 +104,4 @@ PY
 cd "${DEPLOY_DIR}"
 docker compose --env-file .env -f docker-compose.vps.yml up -d --build
 
-echo "Updated admin credentials and redeployed Lush Temp Mail."
+echo "Updated ${ROLE} credentials and redeployed Lush Temp Mail."

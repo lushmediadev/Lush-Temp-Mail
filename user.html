@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="LushMail User Inbox - kiểm tra nhanh email đuôi congmail.top">
+  <title>LushMail Inbox</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="shortcut icon" href="logo.svg">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            lush: {
+              50: '#fff7f5',
+              100: '#fff0eb',
+              200: '#ffd9cc',
+              300: '#ffb8a3',
+              400: '#ff8c6b',
+              500: '#ff5528',
+              600: '#e64a20',
+              700: '#cc3f18',
+              800: '#a33010',
+              900: '#7a2008',
+            },
+            marine: {
+              950: '#0a1224',
+              900: '#111d39',
+              800: '#17284c',
+              700: '#20396d',
+            }
+          },
+          fontFamily: {
+            fustat: ['Fustat', 'sans-serif'],
+            inter: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="user.css?v=20260321-user-inbox-scroll-4">
+</head>
+<body class="font-inter antialiased text-slate-800 min-h-screen bg-white">
+  <div class="min-h-screen">
+    <section class="lookup-hero px-4 sm:px-6">
+      <div class="max-w-[1360px] mx-auto">
+        <header class="lookup-nav flex items-center justify-between gap-4 py-6">
+          <a href="user.html" class="flex items-center gap-3 min-w-0">
+            <img src="logo.svg" alt="LushMail" class="w-11 h-11">
+            <div class="min-w-0">
+              <p class="font-fustat text-[30px] leading-none font-bold text-white">LushMail</p>
+              <p class="mt-1 text-[11px] uppercase tracking-[0.28em] text-slate-300">User Inbox</p>
+            </div>
+          </a>
+          <button id="userLogoutBtn" type="button" class="inline-flex items-center gap-2 border border-white/15 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            Đăng xuất
+          </button>
+        </header>
+
+        <div class="lookup-hero-grid grid gap-10 lg:grid-cols-[minmax(0,1fr)_520px] lg:items-center">
+          <div class="pb-10 sm:pb-14 lg:pb-16">
+            <p class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-300">Mail Server</p>
+            <h1 class="mt-6 max-w-3xl font-fustat text-4xl font-bold leading-tight text-white sm:text-5xl lg:text-[56px]">
+              Kiểm tra thư của email bạn đã nhập ở trang khác.
+            </h1>
+            <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-200">
+              Gõ ten_email@congmail.top, nhấn kiểm tra, danh sách thư sẽ hiện ngay bên dưới. Chọn một thư để đọc chi tiết ở panel bên phải.
+            </p>
+
+            <form id="lookupForm" class="mt-10 max-w-4xl">
+              <label for="aliasInput" class="sr-only">Alias email</label>
+              <div class="flex flex-col gap-3 md:flex-row">
+                <div class="relative flex-1">
+                  <i data-lucide="mail-search" class="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400"></i>
+                  <input
+                    id="aliasInput"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="Nhập email của bạn vào ô này"
+                    class="w-full border border-white/10 bg-white px-4 py-4 pl-12 text-[15px] text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-lush-300"
+                  >
+                </div>
+                <button
+                  id="lookupBtn"
+                  type="submit"
+                  class="inline-flex items-center justify-center gap-2 bg-lush-500 px-7 py-4 text-sm font-semibold text-white transition-colors hover:bg-lush-600"
+                >
+                  <i data-lucide="search" class="w-4.5 h-4.5"></i>
+                  Kiểm tra
+                </button>
+              </div>
+              <p id="aliasError" class="mt-3 hidden text-sm text-rose-200"></p>
+            </form>
+          </div>
+
+          <div class="hero-visual hidden lg:block" aria-hidden="true">
+            <div class="hero-visual-core"></div>
+            <div class="hero-visual-beam beam-one"></div>
+            <div class="hero-visual-beam beam-two"></div>
+            <div class="hero-visual-node node-one"></div>
+            <div class="hero-visual-node node-two"></div>
+            <div class="hero-visual-node node-three"></div>
+            <div class="hero-visual-grid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="bg-white px-4 py-10 sm:px-6 sm:py-12">
+      <div class="max-w-[1360px] mx-auto">
+        <section id="lookupShell" class="hidden user-shell">
+          <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-[0.26em] text-slate-400">Alias hiện tại</p>
+              <h2 id="currentAliasLabel" class="mt-2 font-fustat text-3xl font-bold text-slate-900 break-all">-</h2>
+            </div>
+            <div id="messageCountLabel" class="text-sm font-medium text-slate-500">0 email</div>
+          </div>
+
+          <div class="shell-grid grid min-h-[620px] gap-0 border border-slate-200 bg-white lg:grid-cols-[380px_minmax(0,1fr)]">
+            <aside class="border-b border-slate-200 lg:border-b-0 lg:border-r">
+              <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+                <h3 class="font-fustat text-xl font-bold text-slate-900">Messages</h3>
+                <span class="text-xs uppercase tracking-[0.24em] text-slate-400">Inbox</span>
+              </div>
+
+              <div id="listLoading" class="hidden px-5 py-5">
+                <div class="space-y-3">
+                  <div class="user-skeleton-row"></div>
+                  <div class="user-skeleton-row"></div>
+                  <div class="user-skeleton-row"></div>
+                </div>
+              </div>
+
+              <div id="messageList" class="message-list max-h-[560px] overflow-y-auto"></div>
+
+              <div id="listEmptyState" class="px-6 py-16 text-center">
+                <div class="mx-auto flex h-16 w-16 items-center justify-center border border-slate-200 bg-slate-50 text-slate-300">
+                  <i data-lucide="inbox" class="w-7 h-7"></i>
+                </div>
+                <p class="mt-5 font-fustat text-xl font-bold text-slate-900">Chưa có email</p>
+                <p class="mt-2 text-sm leading-7 text-slate-500">Nhập email phía trên để kiểm tra hộp thư.</p>
+              </div>
+            </aside>
+
+            <section class="min-h-[620px] bg-[#fffdfa]">
+              <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 sm:px-7">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Reading pane</p>
+                  <h3 class="mt-1 font-fustat text-xl font-bold text-slate-900">Chi tiết email</h3>
+                </div>
+              </div>
+              <div id="detailContent" class="min-h-[560px] p-5 sm:p-7"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="preLookupState" class="border border-slate-200 bg-slate-50 px-6 py-16 text-center">
+          <div class="mx-auto flex h-16 w-16 items-center justify-center border border-slate-200 bg-white text-slate-300">
+            <i data-lucide="mailbox" class="w-7 h-7"></i>
+          </div>
+          <p class="mt-5 font-fustat text-2xl font-bold text-slate-900">Nhập email để bắt đầu</p>
+          <p class="mt-3 max-w-2xl mx-auto text-sm leading-7 text-slate-500">
+            Tra cứu mã otp, link verify từ email bạn đã sử dụng. Note lại email đã dùng cho trường hợp quên muốn lấy lại mật khẩu. 
+          </p>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="mobileDetail" class="fixed inset-0 z-50 hidden bg-[#fffdfa] lg:hidden">
+    <div class="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-3">
+      <button id="closeMobileDetailBtn" class="inline-flex h-10 w-10 items-center justify-center border border-slate-200 bg-slate-50 text-slate-600" type="button">
+        <i data-lucide="arrow-left" class="w-5 h-5"></i>
+      </button>
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Mobile reader</p>
+        <p class="font-fustat text-lg font-bold text-slate-900">Chi tiết email</p>
+      </div>
+    </div>
+    <div id="mobileDetailContent" class="min-h-[calc(100dvh-76px)] p-4"></div>
+  </div>
+
+  <div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-[100] flex -translate-x-1/2 translate-y-20 items-center gap-2 bg-slate-950 px-5 py-3 text-sm font-medium text-white opacity-0 shadow-2xl transition-all duration-300">
+    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toastMsg">Done</span>
+  </div>
+
+  <script src="user.js?v=20260321-user-sse-8"></script>
+</body>
+</html>

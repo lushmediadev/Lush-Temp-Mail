@@ -5,6 +5,7 @@ import sqlite3
 from typing import Any
 
 from .config import settings
+from .parser import decode_mime_text
 from .utils import iso_in_hours, normalize_address, split_address, utc_now_iso
 
 
@@ -50,6 +51,8 @@ def init_db() -> None:
                 extracted_otps_json TEXT NOT NULL DEFAULT '[]',
                 raw_headers_json TEXT NOT NULL DEFAULT '{}',
                 received_at TEXT NOT NULL,
+                mailbox_received_at TEXT,
+                ingested_at TEXT,
                 unread INTEGER NOT NULL DEFAULT 1,
                 suppressed INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY(alias_id) REFERENCES aliases(id)
@@ -58,6 +61,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'admin',
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
@@ -66,11 +70,26 @@ def init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE INDEX IF NOT EXISTS idx_messages_recipient_received_at
+            ON messages(recipient_address, received_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_messages_alias_received_at
+            ON messages(alias_id, received_at DESC);
             """
         )
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "important" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
+        if "mailbox_received_at" not in message_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN mailbox_received_at TEXT")
+        if "ingested_at" not in message_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN ingested_at TEXT")
+        conn.execute("UPDATE messages SET mailbox_received_at = COALESCE(mailbox_received_at, received_at) WHERE mailbox_received_at IS NULL")
+        conn.execute("UPDATE messages SET ingested_at = COALESCE(ingested_at, received_at) WHERE ingested_at IS NULL")
+        session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+        if "role" not in session_columns:
+            conn.execute("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
 
 
 def row_to_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -95,15 +114,17 @@ def row_to_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
 def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
+    from_name = decode_mime_text(row["from_name"] or "")
+    subject = decode_mime_text(row["subject"] or "")
     return {
         "id": row["id"],
         "imap_uid": row["imap_uid"],
         "message_id": row["message_id"],
         "alias_id": row["alias_id"],
         "recipient_address": row["recipient_address"],
-        "from_name": row["from_name"],
+        "from_name": from_name,
         "from_email": row["from_email"],
-        "subject": row["subject"],
+        "subject": subject,
         "snippet": row["snippet"],
         "text_body": row["text_body"],
         "html_body": row["html_body"],
@@ -111,24 +132,49 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "extracted_otps": json.loads(row["extracted_otps_json"] or "[]"),
         "raw_headers": json.loads(row["raw_headers_json"] or "{}"),
         "received_at": row["received_at"],
+        "mailbox_received_at": row["mailbox_received_at"] or row["received_at"],
+        "ingested_at": row["ingested_at"] or row["received_at"],
         "unread": bool(row["unread"]),
         "important": bool(row["important"]),
         "suppressed": bool(row["suppressed"]),
     }
 
 
-def create_session(token: str, username: str, expires_at: str) -> None:
+def row_to_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    from_name = decode_mime_text(row["from_name"] or "")
+    subject = decode_mime_text(row["subject"] or "")
+    return {
+        "id": row["id"],
+        "alias_id": row["alias_id"],
+        "recipient_address": row["recipient_address"],
+        "from_name": from_name,
+        "from_email": row["from_email"],
+        "subject": subject,
+        "snippet": row["snippet"],
+        "received_at": row["received_at"],
+        "mailbox_received_at": row["mailbox_received_at"] or row["received_at"],
+        "ingested_at": row["ingested_at"] or row["received_at"],
+        "unread": bool(row["unread"]),
+        "important": bool(row["important"]),
+        "has_links": bool(row["has_links"]),
+        "has_otps": bool(row["has_otps"]),
+    }
+
+
+def create_session(token: str, username: str, role: str, expires_at: str) -> None:
     with _connect() as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO sessions(token, username, expires_at, created_at) VALUES (?, ?, ?, ?)",
-            (token, username, expires_at, utc_now_iso()),
+            "INSERT OR REPLACE INTO sessions(token, username, role, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+            (token, username, role, expires_at, utc_now_iso()),
         )
 
 
 def get_session(token: str) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT token, username, expires_at FROM sessions WHERE token = ?",
+            "SELECT token, username, role, expires_at FROM sessions WHERE token = ?",
             (token,),
         ).fetchone()
     if row is None:
@@ -333,9 +379,9 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
             INSERT OR IGNORE INTO messages(
                 imap_uid, message_id, alias_id, recipient_address, from_name, from_email, subject,
                 snippet, text_body, html_body, extracted_links_json, extracted_otps_json, raw_headers_json,
-                received_at, unread, suppressed
+                received_at, mailbox_received_at, ingested_at, unread, suppressed
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
             """,
             (
                 payload["imap_uid"],
@@ -352,6 +398,8 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
                 json.dumps(payload.get("extracted_otps", []), ensure_ascii=False),
                 json.dumps(payload.get("raw_headers", {}), ensure_ascii=False),
                 payload["received_at"],
+                payload.get("mailbox_received_at") or payload["received_at"],
+                payload.get("ingested_at") or utc_now_iso(),
             ),
         )
         _refresh_alias_stats(conn, alias["id"])
@@ -359,9 +407,13 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     return row_to_message(row)
 
 
-def list_messages(*, alias_id: int | None = None, filter_name: str = "all", search: str = "", limit: int = 200) -> list[dict[str, Any]]:
+def _build_message_scope(
+    *,
+    alias_id: int | None = None,
+    filter_name: str = "all",
+    search: str = "",
+) -> tuple[str, list[Any]]:
     query = """
-        SELECT messages.*
         FROM messages
         LEFT JOIN aliases ON aliases.id = messages.alias_id
         WHERE messages.suppressed = 0
@@ -393,6 +445,12 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
             )
         """
         values.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern])
+    return query, values
+
+
+def list_messages(*, alias_id: int | None = None, filter_name: str = "all", search: str = "", limit: int = 200) -> list[dict[str, Any]]:
+    scope_query, values = _build_message_scope(alias_id=alias_id, filter_name=filter_name, search=search)
+    query = f"SELECT messages.* {scope_query}"
     query += " ORDER BY received_at DESC LIMIT ?"
     values.append(limit)
     with _connect() as conn:
@@ -400,9 +458,115 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
     return [row_to_message(row) for row in rows]
 
 
+def delete_messages_by_scope(*, alias_id: int | None = None, filter_name: str = "all", search: str = "") -> dict[str, Any]:
+    scope_query, values = _build_message_scope(alias_id=alias_id, filter_name=filter_name, search=search)
+    query = f"SELECT messages.id, messages.alias_id, messages.recipient_address {scope_query}"
+
+    with _connect() as conn:
+        rows = conn.execute(query, values).fetchall()
+        if not rows:
+            return {"deleted_count": 0, "recipient_addresses": []}
+
+        message_ids = [row["id"] for row in rows]
+        alias_ids = sorted({row["alias_id"] for row in rows if row["alias_id"] is not None})
+        recipient_addresses = sorted({row["recipient_address"] for row in rows if row["recipient_address"]})
+        placeholders = ", ".join("?" for _ in message_ids)
+        conn.execute(f"UPDATE messages SET suppressed = 1 WHERE id IN ({placeholders})", message_ids)
+        for alias_id_value in alias_ids:
+            _refresh_alias_stats(conn, alias_id_value)
+    return {"deleted_count": len(message_ids), "recipient_addresses": recipient_addresses}
+
+
+def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                messages.id,
+                messages.alias_id,
+                messages.recipient_address,
+                messages.from_name,
+                messages.from_email,
+                messages.subject,
+                messages.snippet,
+                messages.received_at,
+                messages.mailbox_received_at,
+                messages.ingested_at,
+                messages.unread,
+                messages.important,
+                CASE WHEN messages.extracted_links_json != '[]' THEN 1 ELSE 0 END AS has_links,
+                CASE WHEN messages.extracted_otps_json != '[]' THEN 1 ELSE 0 END AS has_otps
+            FROM messages
+            LEFT JOIN aliases ON aliases.id = messages.alias_id
+            WHERE messages.suppressed = 0
+              AND messages.recipient_address = ?
+              AND COALESCE(aliases.status, 'active') != 'deleted'
+            ORDER BY messages.received_at DESC
+            """,
+            (normalize_address(recipient_address),),
+        ).fetchall()
+    return [row_to_message_summary(row) for row in rows]
+
+
+def list_recent_message_timings(*, limit: int = 20) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                id,
+                imap_uid,
+                message_id,
+                recipient_address,
+                from_email,
+                subject,
+                received_at,
+                mailbox_received_at,
+                ingested_at
+            FROM messages
+            WHERE suppressed = 0
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        items.append(
+            {
+                "id": row["id"],
+                "imap_uid": row["imap_uid"],
+                "message_id": row["message_id"],
+                "recipient_address": row["recipient_address"],
+                "from_email": row["from_email"],
+                "subject": decode_mime_text(row["subject"] or ""),
+                "received_at": row["received_at"],
+                "mailbox_received_at": row["mailbox_received_at"] or row["received_at"],
+                "ingested_at": row["ingested_at"] or row["received_at"],
+            }
+        )
+    return items
+
+
 def get_message(message_id: int) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+    return row_to_message(row)
+
+
+def get_message_for_address(message_id: int, recipient_address: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT messages.*
+            FROM messages
+            LEFT JOIN aliases ON aliases.id = messages.alias_id
+            WHERE messages.id = ?
+              AND messages.suppressed = 0
+              AND messages.recipient_address = ?
+              AND COALESCE(aliases.status, 'active') != 'deleted'
+            """,
+            (message_id, normalize_address(recipient_address)),
+        ).fetchone()
     return row_to_message(row)
 
 

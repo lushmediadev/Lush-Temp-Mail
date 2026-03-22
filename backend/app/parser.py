@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from email.header import decode_header
 from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any
@@ -27,6 +28,26 @@ OTP_CONTEXT_RE = re.compile(
 GENERIC_CODE_RE = re.compile(r"\b\d{4,8}\b")
 TAG_RE = re.compile(r"<[^>]+>")
 WHITESPACE_RE = re.compile(r"\s+")
+INTERNALDATE_RE = re.compile(r'INTERNALDATE "([^"]+)"')
+
+
+def decode_mime_text(value: str) -> str:
+    raw_value = str(value or "")
+    if not raw_value:
+        return ""
+
+    decoded_parts: list[str] = []
+    for chunk, charset in decode_header(raw_value):
+        if isinstance(chunk, bytes):
+            encoding = charset or "utf-8"
+            try:
+                decoded_parts.append(chunk.decode(encoding, errors="replace"))
+            except LookupError:
+                decoded_parts.append(chunk.decode("utf-8", errors="replace"))
+        else:
+            decoded_parts.append(chunk)
+
+    return "".join(decoded_parts).strip()
 
 
 def html_to_text(value: str) -> str:
@@ -146,10 +167,23 @@ def parse_received_at(message: Message) -> str:
         return utc_now().isoformat()
 
 
+def parse_mailbox_received_at(fetch_metadata: bytes | str | None) -> str | None:
+    if not fetch_metadata:
+        return None
+    raw_metadata = fetch_metadata.decode(errors="replace") if isinstance(fetch_metadata, bytes) else str(fetch_metadata)
+    match = INTERNALDATE_RE.search(raw_metadata)
+    if not match:
+        return None
+    try:
+        return parsedate_to_datetime(match.group(1)).astimezone().isoformat()
+    except Exception:
+        return None
+
+
 def collect_headers(message: Message) -> dict[str, Any]:
     return {
-        "subject": message.get("Subject", ""),
-        "from": message.get("From", ""),
+        "subject": decode_mime_text(message.get("Subject", "")),
+        "from": decode_mime_text(message.get("From", "")),
         "to": message.get("To", ""),
         "cc": message.get("Cc", ""),
         "message_id": message.get("Message-Id", ""),
