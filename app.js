@@ -813,14 +813,16 @@ function renderDetail(message) {
   const originalSubject = message.subject || '(No subject)';
   const originalBody = message.text_body || message.snippet || '';
   const translation = state.messageTranslations[message.id];
-  const isTranslationVisible = Boolean(
-    state.messageTranslationVisibility[message.id]
-    && translation
-    && !translation.loading
-    && (translation.translated_subject || translation.translated_body),
-  );
+  const hasTranslation = hasUsableTranslation(translation);
+  const isTranslationVisible = Boolean(state.messageTranslationVisibility[message.id] && hasTranslation);
+  const canToggleTranslation = shouldRenderTranslateButton(message, translation);
   const detailSubject = isTranslationVisible ? (translation.translated_subject || originalSubject) : originalSubject;
   const detailBody = isTranslationVisible ? (translation.translated_body || originalBody) : originalBody;
+  const detailBodySection = renderDetailBodySection(message, detailBody, {
+    isTranslationVisible,
+    translatedHtml: isTranslationVisible ? (translation?.translated_html || '') : '',
+  });
+  const attachmentSection = renderAttachmentSection(message);
   const translationMeta = renderTranslationMeta(message.id, translation, isTranslationVisible);
   const detailHTML = `
     <div class="detail-fade-in detail-pane-shell">
@@ -854,15 +856,17 @@ function renderDetail(message) {
                 <i data-lucide="calendar" class="w-4 h-4 text-gray-400"></i>
                 <span class="text-sm text-gray-500">${formatFullDate(message.received_at)}</span>
               </div>
-              <button
-                type="button"
-                class="detail-translate-btn ${translation?.loading ? 'loading' : ''} ${isTranslationVisible ? 'active' : ''}"
-                data-translate-message="${message.id}"
-                title="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
-                aria-label="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
-              >
-                <i data-lucide="${translation?.loading ? 'loader-circle' : 'languages'}" class="w-4 h-4"></i>
-              </button>
+              ${canToggleTranslation ? `
+                <button
+                  type="button"
+                  class="detail-translate-btn ${translation?.loading ? 'loading' : ''} ${isTranslationVisible ? 'active' : ''}"
+                  data-translate-message="${message.id}"
+                  title="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
+                  aria-label="${isTranslationVisible ? 'Xem bản gốc' : 'Dịch sang tiếng Việt'}"
+                >
+                  <i data-lucide="${translation?.loading ? 'loader-circle' : 'languages'}" class="w-4 h-4"></i>
+                </button>
+              ` : ''}
             </div>
 
             ${renderDetailExtras(message)}
@@ -872,10 +876,10 @@ function renderDetail(message) {
             <div class="detail-section-heading">
               <p class="detail-kicker">Nội dung email</p>
             </div>
-            <div class="detail-body-copy">
-              ${linkifyText(detailBody)}
-            </div>
+            ${detailBodySection}
           </section>
+
+          ${attachmentSection}
         </div>
       </div>
 
@@ -888,8 +892,50 @@ function renderDetail(message) {
   dom.detailContent.innerHTML = detailHTML;
   dom.mobileDetailContent.innerHTML = detailHTML;
   lucide.createIcons();
+  syncEmailFrameHeights();
 
   bindDetailActions();
+}
+
+function renderDetailBodySection(message, detailBody, options = {}) {
+  const { isTranslationVisible = false, translatedHtml = '' } = options;
+  const normalizedHtml = String(message.html_body || '').trim();
+  const normalizedTranslatedHtml = String(translatedHtml || '').trim();
+  const normalizedText = String(detailBody || '').trim();
+
+  if (isTranslationVisible && normalizedTranslatedHtml) {
+    const frameDocument = buildEmailFrameDocument(normalizedTranslatedHtml);
+    return `
+      <div class="detail-body-render">
+        <iframe
+          class="detail-html-frame"
+          data-email-frame="true"
+          sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          srcdoc="${escapeAttribute(frameDocument)}"
+        ></iframe>
+      </div>
+    `;
+  }
+
+  if (!isTranslationVisible && normalizedHtml) {
+    const frameDocument = buildEmailFrameDocument(normalizedHtml);
+    return `
+      <div class="detail-body-render">
+        <iframe
+          class="detail-html-frame"
+          data-email-frame="true"
+          sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          srcdoc="${escapeAttribute(frameDocument)}"
+        ></iframe>
+      </div>
+    `;
+  }
+
+  return `<div class="detail-body-copy">${linkifyText(normalizedText || 'Email này không có nội dung text preview.')}</div>`;
 }
 
 function renderComposePanel(message) {
@@ -1083,7 +1129,7 @@ function buildComposeDraft(message, mode) {
 }
 
 function renderTranslationMeta(messageId, translation, isTranslationVisible) {
-  if (!translation || translation.loading) {
+  if (!translation || translation.loading || translation.skipped) {
     return '';
   }
 
@@ -1110,6 +1156,12 @@ async function toggleMessageTranslation(messageId) {
   }
 
   if (existing) {
+    if (existing.skipped) {
+      applyNoTranslateHint(messageId, existing.source_language || 'vi');
+      renderDetail(state.selectedMessageCache || message);
+      showToast('Email này đã là tiếng Việt');
+      return;
+    }
     state.messageTranslationVisibility[messageId] = !state.messageTranslationVisibility[messageId];
     renderDetail(message);
     return;
@@ -1127,6 +1179,13 @@ async function toggleMessageTranslation(messageId) {
       ...payload.item,
       loading: false,
     };
+    if (payload.item?.skipped) {
+      state.messageTranslationVisibility[messageId] = false;
+      applyNoTranslateHint(messageId, payload.item.source_language || 'vi');
+      renderDetail(state.selectedMessageCache || message);
+      showToast('Email này đã là tiếng Việt');
+      return;
+    }
     state.messageTranslationVisibility[messageId] = true;
     renderDetail(message);
     showToast('Đã dịch email sang tiếng Việt');
@@ -1134,6 +1193,32 @@ async function toggleMessageTranslation(messageId) {
     delete state.messageTranslations[messageId];
     delete state.messageTranslationVisibility[messageId];
     handleError(error);
+  }
+}
+
+function hasUsableTranslation(translation) {
+  return Boolean(
+    translation
+    && !translation.loading
+    && !translation.skipped
+    && (translation.translated_subject || translation.translated_body || translation.translated_html),
+  );
+}
+
+function shouldRenderTranslateButton(message, translation) {
+  if (translation?.loading || hasUsableTranslation(translation)) {
+    return true;
+  }
+  return message?.can_translate !== false;
+}
+
+function applyNoTranslateHint(messageId, sourceLanguage = 'vi') {
+  if (state.selectedMessageCache?.id === messageId) {
+    state.selectedMessageCache = {
+      ...state.selectedMessageCache,
+      can_translate: false,
+      language_hint: sourceLanguage,
+    };
   }
 }
 
@@ -1161,6 +1246,36 @@ function renderDetailExtras(message) {
       ${otpSection ? `<div><p class="detail-kicker mb-3">OTP tìm thấy</p><div class="flex flex-wrap gap-2">${otpSection}</div></div>` : ''}
       ${linkSection ? `<div><p class="detail-kicker mb-3">Link quan trọng</p><div class="flex flex-wrap gap-2">${linkSection}</div></div>` : ''}
     </div>
+  `;
+}
+
+function renderAttachmentSection(message) {
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) {
+    return '';
+  }
+
+  const items = attachments.map((attachment) => `
+    <div class="detail-attachment-item">
+      <div class="detail-attachment-icon">
+        <i data-lucide="paperclip" class="w-4 h-4"></i>
+      </div>
+      <div class="min-w-0">
+        <p class="detail-attachment-name">${escapeHtml(attachment.filename || 'Unnamed attachment')}</p>
+        <p class="detail-attachment-meta">${escapeHtml(attachment.content_type || 'application/octet-stream')} • ${formatFileSize(attachment.size_bytes || 0)}</p>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <section class="detail-flat-section">
+      <div class="detail-section-heading">
+        <p class="detail-kicker">Tệp đính kèm</p>
+      </div>
+      <div class="detail-attachment-list">
+        ${items}
+      </div>
+    </section>
   `;
 }
 
@@ -1539,6 +1654,70 @@ function escapeAttribute(value) {
 function linkifyText(value) {
   const escaped = escapeHtml(value);
   return escaped.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" class="text-lush-500 hover:underline break-all" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function buildEmailFrameDocument(htmlBody) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_blank">
+  <style>
+    html, body { margin: 0; padding: 0; background: #ffffff; }
+    body { overflow-wrap: anywhere; word-break: break-word; }
+    img, video { max-width: 100% !important; height: auto !important; }
+    table { max-width: 100% !important; }
+  </style>
+</head>
+<body>${sanitizeEmailHtml(htmlBody)}</body>
+</html>`;
+}
+
+function sanitizeEmailHtml(value) {
+  return String(value || '')
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<base\b[^>]*>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*(['"]).*?\1/gi, '')
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, '')
+    .replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[\s\S]*?\2/gi, ' $1="#"');
+}
+
+function syncEmailFrameHeights() {
+  document.querySelectorAll('iframe[data-email-frame="true"]').forEach((frame) => {
+    const applyHeight = () => {
+      try {
+        const doc = frame.contentDocument;
+        if (!doc) {
+          return;
+        }
+        const bodyHeight = doc.body ? doc.body.scrollHeight : 0;
+        const htmlHeight = doc.documentElement ? doc.documentElement.scrollHeight : 0;
+        frame.style.height = `${Math.max(bodyHeight, htmlHeight, 240)}px`;
+      } catch {
+        frame.style.height = '420px';
+      }
+    };
+
+    frame.addEventListener('load', applyHeight, { once: true });
+    window.setTimeout(applyHeight, 60);
+  });
+}
+
+function formatFileSize(sizeBytes) {
+  const size = Number(sizeBytes || 0);
+  if (!size) {
+    return '0 B';
+  }
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let value = size;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const digits = value >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function formatRelativeDate(dateStr) {

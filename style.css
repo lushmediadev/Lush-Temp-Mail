@@ -332,6 +332,63 @@ body { overflow: hidden; }
   overflow-x: auto;
 }
 
+.detail-body-render {
+  display: block;
+  background: #ffffff;
+}
+
+.detail-html-frame {
+  display: block;
+  width: 100%;
+  min-height: 240px;
+  border: 0;
+  background: #ffffff;
+}
+
+.detail-attachment-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid #eceff3;
+}
+
+.detail-attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid #eceff3;
+  background: #ffffff;
+  padding: 14px 0;
+}
+
+.detail-attachment-icon {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: #94a3b8;
+}
+
+.detail-attachment-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+.detail-attachment-meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
+  word-break: break-word;
+}
+
 .detail-compose-section {
   background: #ffffff;
 }

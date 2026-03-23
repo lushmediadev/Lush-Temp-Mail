@@ -417,3 +417,44 @@
 - Fixed: reduces deployment/source drift by ensuring the code already running on VPS is also represented in the GitHub repository.
 - Affected files: `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: low; metadata/documentation only, but it tracks an important operational sync step.
+### 2026-03-23 10:02 - stabilize_html_email_rendering
+- Added: HTML email rendering inside sandboxed iframes for both admin and user readers, plus visible attachment metadata sections in the detail pane.
+- Changed: HTML-to-text fallback parsing now strips style/script/head noise and prefers cleaned HTML text when the plain-text part looks like CSS or MIME boilerplate.
+- Fixed: Transactional emails with buttons, embedded CSS, or attachment parts no longer spill raw `@font-face` / layout CSS into the displayed body content.
+- Affected files: backend/app/parser.py, backend/app/imap_sync.py, backend/app/db.py, backend/tests/test_parser.py, app.js, user.js, style.css, user.css
+- Impact/Risk: Existing messages without `html_body` still fall back to text rendering; iframe-based HTML display is isolated from app CSS but depends on browser iframe support for final sizing.
+
+### 2026-03-23 10:09 - flatten_email_reader_surface
+- Added: No new feature surface; this is a presentation pass to align the reader with the existing flat app shell.
+- Changed: Removed the visible text-fallback toggle and flattened the email/attachment presentation so content renders directly on the existing white reader panel.
+- Fixed: Nested boxed containers around HTML mail content and attachments no longer make the detail pane feel cramped or visually detached from the rest of the UI.
+- Affected files: app.js, user.js, style.css, user.css
+- Impact/Risk: Rich HTML emails still rely on the iframe path; attachments remain metadata-only in the reader.
+
+### 2026-03-23 10:20 - fix_user_reader_escapeattribute_regression
+- Added: Restored the missing `escapeAttribute()` helper in the user reader bundle.
+- Changed: Bumped the `user.js` cache-busting version in `user.html` so browsers fetch the fixed script immediately after redeploy.
+- Fixed: The live user detail pane no longer crashes with `escapeAttribute is not defined` when opening HTML emails.
+- Affected files: user.js, user.html
+- Impact/Risk: Users with an already-open cached tab may still need one hard refresh to replace the old JS bundle.
+
+### 2026-03-23 10:30 - tighten_otp_and_action_link_badges
+- Added: Parser regression coverage for lowercase OTP false positives and noisy HTML link extraction.
+- Changed: OTP/link extraction now only keeps confident results; generic or asset URLs are dropped, and only one action link per type is retained.
+- Fixed: Verification emails no longer surface bogus OTP badges like `rgin` or a row of unrelated `Mở link` actions from HTML/CSS noise.
+- Affected files: backend/app/parser.py, backend/app/db.py, backend/tests/test_parser.py
+- Impact/Risk: Existing filter counts based on stored extracted JSON may still need a future maintenance pass if strict historical `Có OTP` / `Có link verify` scopes must be perfectly reclassified in bulk.
+
+### 2026-03-23 10:56 - tighten_ui_and_subagent_rules
+- Added: A workspace-level `D:\AGENTS.md` file so the personalized operating rules are now stored on disk and reused consistently across future tasks.
+- Changed: Workspace and repo rules now explicitly require `uncodixfy` for UI work and require UI edits to align with the existing design system before introducing new patterns.
+- Fixed: Reduces repeated UI drift toward nested floating cards and reduces over-eager subagent usage by making evaluation and scope constraints explicit.
+- Affected files: D:\AGENTS.md, AGENTS.md
+- Impact/Risk: low; no runtime behavior changes, but future UI and delegation behavior is intentionally stricter.
+
+### 2026-03-23 11:21 - preserve_html_translation_and_skip_vi_to_vi
+- Added: HTML-aware translation output (`translated_html`) plus translator tests covering layout preservation and Vietnamese skip behavior.
+- Changed: Admin and user readers now keep iframe-based HTML layout while translated, and both routes share the same `skip if already Vietnamese` behavior.
+- Fixed: Translating an HTML email no longer collapses the layout into plain text, and emails already in Vietnamese no longer show or apply a broken `Ti?ng Vi?t -> Ti?ng Vi?t` translation state.
+- Affected files: backend/app/translator.py, backend/app/db.py, backend/tests/test_translator.py, app.js, user.js, user.css, index.html, user.html
+- Impact/Risk: low-medium; translation behavior changed on both readers, but syntax and regression tests pass and the fallback path still preserves plain-text emails.

@@ -5,7 +5,8 @@ import sqlite3
 from typing import Any
 
 from .config import settings
-from .parser import decode_mime_text
+from .parser import decode_mime_text, extract_links, extract_otps, html_to_text
+from .translator import DEFAULT_TARGET_LANGUAGE, infer_language_hint, should_offer_translation
 from .utils import iso_in_hours, normalize_address, split_address, utc_now_iso
 
 
@@ -47,6 +48,7 @@ def init_db() -> None:
                 snippet TEXT,
                 text_body TEXT,
                 html_body TEXT,
+                attachments_json TEXT NOT NULL DEFAULT '[]',
                 extracted_links_json TEXT NOT NULL DEFAULT '[]',
                 extracted_otps_json TEXT NOT NULL DEFAULT '[]',
                 raw_headers_json TEXT NOT NULL DEFAULT '{}',
@@ -85,6 +87,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE messages ADD COLUMN mailbox_received_at TEXT")
         if "ingested_at" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN ingested_at TEXT")
+        if "attachments_json" not in message_columns:
+            conn.execute("ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'")
         conn.execute("UPDATE messages SET mailbox_received_at = COALESCE(mailbox_received_at, received_at) WHERE mailbox_received_at IS NULL")
         conn.execute("UPDATE messages SET ingested_at = COALESCE(ingested_at, received_at) WHERE ingested_at IS NULL")
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -116,6 +120,12 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         return None
     from_name = decode_mime_text(row["from_name"] or "")
     subject = decode_mime_text(row["subject"] or "")
+    text_body = row["text_body"] or ""
+    html_body = row["html_body"] or ""
+    readable_text = text_body or (html_to_text(html_body) if html_body else "")
+    extracted_links = extract_links(text_body, html_body)
+    extracted_otps = extract_otps(text_body, html_body)
+    language_hint = infer_language_hint(subject, readable_text)
     return {
         "id": row["id"],
         "imap_uid": row["imap_uid"],
@@ -126,10 +136,11 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "from_email": row["from_email"],
         "subject": subject,
         "snippet": row["snippet"],
-        "text_body": row["text_body"],
-        "html_body": row["html_body"],
-        "extracted_links": json.loads(row["extracted_links_json"] or "[]"),
-        "extracted_otps": json.loads(row["extracted_otps_json"] or "[]"),
+        "text_body": text_body,
+        "html_body": html_body,
+        "attachments": json.loads(row["attachments_json"] or "[]"),
+        "extracted_links": extracted_links,
+        "extracted_otps": extracted_otps,
         "raw_headers": json.loads(row["raw_headers_json"] or "{}"),
         "received_at": row["received_at"],
         "mailbox_received_at": row["mailbox_received_at"] or row["received_at"],
@@ -137,6 +148,13 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "unread": bool(row["unread"]),
         "important": bool(row["important"]),
         "suppressed": bool(row["suppressed"]),
+        "language_hint": language_hint,
+        "can_translate": should_offer_translation(
+            subject,
+            readable_text,
+            target_language=DEFAULT_TARGET_LANGUAGE,
+            html_body=html_body,
+        ),
     }
 
 
@@ -378,10 +396,10 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
             """
             INSERT OR IGNORE INTO messages(
                 imap_uid, message_id, alias_id, recipient_address, from_name, from_email, subject,
-                snippet, text_body, html_body, extracted_links_json, extracted_otps_json, raw_headers_json,
+                snippet, text_body, html_body, attachments_json, extracted_links_json, extracted_otps_json, raw_headers_json,
                 received_at, mailbox_received_at, ingested_at, unread, suppressed
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
             """,
             (
                 payload["imap_uid"],
@@ -394,6 +412,7 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
                 payload.get("snippet", ""),
                 payload.get("text_body", ""),
                 payload.get("html_body", ""),
+                json.dumps(payload.get("attachments", []), ensure_ascii=False),
                 json.dumps(payload.get("extracted_links", []), ensure_ascii=False),
                 json.dumps(payload.get("extracted_otps", []), ensure_ascii=False),
                 json.dumps(payload.get("raw_headers", {}), ensure_ascii=False),

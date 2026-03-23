@@ -457,3 +457,48 @@
 - Re-read project memory and checked both local repo state plus the live VPS app path before pushing, to avoid assuming the deployed server folder was itself a git checkout.
 - Confirmed `/opt/lush-temp-mail/app` on VPS is not a git repository, so the correct push source is the local repo worktree that already contains the deployed code and the latest project memory updates.
 - Re-ran backend/frontend syntax checks, excluded scratch files like `.tmp_*` from version control, and prepared a single git commit that captures the current deployed backend, frontend, deploy helper, and docs state for GitHub.
+
+## 2026-03-23 10:02 - Stabilize HTML email rendering and attachment display
+
+- Re-read project memory/rules, then traced the broken email detail view to two separate problems: CSS-heavy transactional emails were contaminating the plain-text fallback, and the UI was still forcing most messages through a text-only renderer even when a valid HTML body existed.
+- Hardened backend parsing in `backend/app/parser.py` and `backend/app/imap_sync.py` so `<head>/<style>/<script>` noise is stripped from HTML-to-text conversion, CSS-looking plain-text fallbacks are replaced with readable HTML-derived text, and attachment metadata is extracted during IMAP import.
+- Extended SQLite persistence in `backend/app/db.py` to store `attachments_json`, keeping attachment metadata available to the detail APIs without changing the existing message identity or alias contracts.
+- Reworked both readers in `app.js` and `user.js` to render HTML mail bodies inside sandboxed iframes, auto-size those frames, keep a collapsible text fallback, and show a dedicated attachment list instead of letting MIME-heavy content leak into the main body copy.
+- Added matching reader styles in `style.css` and `user.css`, then verified with `node --check`, `py_compile`, `pytest backend/tests/test_parser.py`, and a live browser injection on the local admin route showing CTA buttons, OTP, links, and attachment metadata rendering without layout bleed.
+
+## 2026-03-23 10:09 - Flatten email detail reader surface
+
+- Re-read project memory/rules and the `uncodixfy` skill again after the user clarified the visual direction: the HTML email should feel like part of the existing reader panel, not like a separate card nested inside more cards.
+- Removed the visible `text fallback` affordance from both readers in `app.js` and `user.js`, keeping HTML rendering as the primary display path whenever an email already has a valid `html_body`.
+- Simplified reader styling in `style.css` and `user.css` so the iframe sits directly on the white panel background, and attachment rows now use simple list dividers instead of boxed mini-cards.
+- Verified with `node --check` and a fresh browser injection on `http://127.0.0.1:8010/` that the fallback UI is gone, the iframe still renders the sample CTA mail correctly, and attachments now inherit the flatter app-native look.
+
+## 2026-03-23 10:20 - Fix user reader runtime regression after deploy
+
+- Re-read project memory/rules, then investigated the live user screenshot showing the detail pane stuck on skeleton with toast `escapeAttribute is not defined`.
+- Traced the regression to `user.js`: the new iframe-based HTML reader called `escapeAttribute(frameDocument)` but the helper had only been added in `app.js`, not in the user bundle.
+- Added `escapeAttribute()` to `user.js`, bumped the `user.js` asset version in `user.html` to `20260323-user-reader-fix-9`, and redeployed the updated files to `/opt/lush-temp-mail/app` on VPS.
+- Re-verified live that `https://lush.congmail.top/api/health` still returns `ok` and that the served `user.js` bundle now contains both `function escapeAttribute` and the new cache-busted script reference.
+
+## 2026-03-23 10:30 - Tighten OTP and action-link badges
+
+- Re-read project memory/rules, then investigated the false-positive badge report where an OpenAI verification email surfaced a bogus OTP like `rgin` and too many `Mở link` actions from unrelated HTML/CSS URLs.
+- Tightened `backend/app/parser.py` so OTP extraction now validates only plausible codes, reads HTML through cleaned text instead of raw markup for OTP context, and limits action links to confident verification/reset URLs extracted from real anchor `href`s or plain-text URLs.
+- Updated `backend/app/db.py` so message detail responses recompute `extracted_otps` and `extracted_links` with the latest heuristics on read, which fixes existing stored messages without needing those emails to be re-imported.
+- Added regression tests for lowercase false positives and noisy HTML asset links in `backend/tests/test_parser.py`, then redeployed the backend parser/db fixes to VPS and re-checked live health at `https://lush.congmail.top/api/health`.
+
+## 2026-03-23 10:56 - Tighten UI and subagent operating rules
+
+- Re-read project memory/rules, reviewed the current workspace/repo rule files, and ran Rule Bootstrap against the active repo structure (`requirements.txt`, `Dockerfile`, `backend/AGENTS.md`) before changing any rule documents.
+- Created `D:\AGENTS.md` so the personalized working agreements now exist as a workspace-level rule file instead of living only in chat context.
+- Added explicit UI rules at the workspace level that require the `uncodixfy` skill for every UI task and require UI changes to inspect and align with the existing design language before introducing any new structure.
+- Updated `D:\Lush-Temp-Mail\AGENTS.md` with repo-specific UI discipline that rejects nested/floating card patterns and requires edits to stay visually consistent with the current admin/user shell.
+- Tightened subagent guidance at both levels so delegation must be explicitly evaluated first, stays focused on exploration/read-only investigation by default, and only delegates implementation when the work is truly independent and allowed by the current tooling policy.
+
+## 2026-03-23 11:21 - Preserve HTML layout during translation and add user translation flow
+
+- Re-read project memory/rules, kept the UI pass aligned with `uncodixfy`, and traced the regression to the admin translator rendering only `translated_body` text instead of a translated HTML document, which destroyed the original mail layout and CTA structure.
+- Reworked `backend/app/translator.py` so translation now supports `translated_html`, preserves HTML structure by translating text nodes instead of flattening the whole document, and skips translation entirely when the message is already Vietnamese.
+- Enriched `backend/app/db.py` detail payloads with `language_hint` and `can_translate`, then updated `app.js` so admin keeps iframe-based HTML rendering while translated and automatically hides translation affordances for Vietnamese mail.
+- Ported the same translation flow into `user.js` and `user.css`, including the translate toggle, translated HTML iframe rendering, same-language skip behavior, and cache-busted asset references in `index.html` / `user.html`.
+- Verified with `node --check` for both frontend bundles, `py_compile` for backend files, and `.venv\Scripts\python.exe -m pytest -q backend/tests/test_parser.py backend/tests/test_translator.py` passing `10/10`.

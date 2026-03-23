@@ -15,6 +15,7 @@ from .events import inbox_events
 from .parser import (
     collect_headers,
     decode_mime_text,
+    extract_attachments,
     extract_links,
     extract_otps,
     extract_recipient,
@@ -22,6 +23,7 @@ from .parser import (
     extract_text_parts,
     parse_mailbox_received_at,
     parse_received_at,
+    prefer_readable_text,
 )
 from .utils import iso_days_ago, utc_now_iso
 
@@ -252,7 +254,8 @@ class MailSyncService:
             sender_name, sender_email = sender_candidates[0]
             sender_name = decode_mime_text(sender_name)
 
-        text_body, html_body = extract_text_parts(message)
+        raw_text_body, html_body = extract_text_parts(message)
+        text_body = prefer_readable_text(raw_text_body, html_body)
         return {
             "imap_uid": uid,
             "message_id": message.get("Message-Id", ""),
@@ -263,6 +266,7 @@ class MailSyncService:
             "snippet": extract_snippet(text_body),
             "text_body": text_body,
             "html_body": html_body,
+            "attachments": extract_attachments(message),
             "extracted_links": extract_links(text_body, html_body),
             "extracted_otps": extract_otps(text_body, html_body),
             "raw_headers": collect_headers(message),

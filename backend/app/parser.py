@@ -6,6 +6,7 @@ from email.header import decode_header
 from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from .utils import normalize_address, utc_now
 
@@ -21,6 +22,7 @@ RECIPIENT_HEADERS = [
 ]
 
 URL_RE = re.compile(r"https?://[^\s<>\"]+")
+HREF_RE = re.compile(r"""(?is)<a\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))""")
 OTP_CONTEXT_RE = re.compile(
     r"(?i)(?:otp|verification code|verify code|security code|m[aã]\s*x[aá]c\s*nh[aậ]n|m[aã]|code)"
     r"[^A-Z0-9]{0,20}([A-Z0-9]{4,10})"
@@ -29,6 +31,64 @@ GENERIC_CODE_RE = re.compile(r"\b\d{4,8}\b")
 TAG_RE = re.compile(r"<[^>]+>")
 WHITESPACE_RE = re.compile(r"\s+")
 INTERNALDATE_RE = re.compile(r'INTERNALDATE "([^"]+)"')
+STYLE_BLOCK_RE = re.compile(r"(?is)<style\b[^>]*>.*?</style>")
+SCRIPT_BLOCK_RE = re.compile(r"(?is)<script\b[^>]*>.*?</script>")
+HEAD_BLOCK_RE = re.compile(r"(?is)<head\b[^>]*>.*?</head>")
+NOISE_MARKERS = (
+    "font-family:",
+    "@media only screen",
+    "mso-",
+    ".externalclass",
+    "#bodytable",
+    "#bodycell",
+    "display:swap",
+    "woff2",
+)
+ACTION_VERIFY_KEYWORDS = (
+    "verify",
+    "verification",
+    "confirm",
+    "confirmation",
+    "activate",
+    "signin",
+    "sign-in",
+    "login",
+    "log-in",
+    "auth",
+    "magic",
+    "email-verification",
+)
+ACTION_RESET_KEYWORDS = (
+    "reset",
+    "recover",
+    "password-reset",
+    "reset-password",
+)
+ACTION_CONTEXT_KEYWORDS = (
+    "otp",
+    "verification",
+    "verify",
+    "security code",
+    "passcode",
+    "sign in",
+    "login",
+    "log in",
+)
+ASSET_EXTENSIONS = (
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".webp",
+    ".css",
+    ".js",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".ico",
+    ".xml",
+)
 
 
 def decode_mime_text(value: str) -> str:
@@ -51,7 +111,10 @@ def decode_mime_text(value: str) -> str:
 
 
 def html_to_text(value: str) -> str:
-    without_tags = TAG_RE.sub(" ", value or "")
+    sanitized = HEAD_BLOCK_RE.sub(" ", value or "")
+    sanitized = STYLE_BLOCK_RE.sub(" ", sanitized)
+    sanitized = SCRIPT_BLOCK_RE.sub(" ", sanitized)
+    without_tags = TAG_RE.sub(" ", sanitized)
     unescaped = html.unescape(without_tags)
     return WHITESPACE_RE.sub(" ", unescaped).strip()
 
@@ -88,6 +151,35 @@ def extract_text_parts(message: Message) -> tuple[str, str]:
     return text_body.strip(), html_body.strip()
 
 
+def extract_attachments(message: Message) -> list[dict[str, Any]]:
+    attachments: list[dict[str, Any]] = []
+
+    for part in message.walk():
+        if part.is_multipart():
+            continue
+
+        disposition = (part.get_content_disposition() or "").lower()
+        filename = decode_mime_text(part.get_filename() or "")
+        content_type = part.get_content_type()
+
+        is_attachment = disposition == "attachment"
+        is_inline_asset = disposition == "inline" and bool(filename)
+        if not is_attachment and not is_inline_asset:
+            continue
+
+        payload = part.get_payload(decode=True) or b""
+        attachments.append(
+            {
+                "filename": filename or "Unnamed attachment",
+                "content_type": content_type,
+                "size_bytes": len(payload),
+                "disposition": disposition or "attachment",
+            }
+        )
+
+    return attachments
+
+
 def extract_recipient(message: Message, domain: str, central_mailbox: str) -> str | None:
     candidates: list[str] = []
     domain_suffix = f"@{domain.lower()}"
@@ -109,36 +201,45 @@ def extract_recipient(message: Message, domain: str, central_mailbox: str) -> st
 def extract_links(text_body: str, html_body: str) -> list[dict[str, str]]:
     links: list[dict[str, str]] = []
     seen: set[str] = set()
-    for source in (text_body, html_body):
-        for url in URL_RE.findall(source or ""):
-            normalized = url.rstrip(".,)")
-            if normalized in seen:
-                continue
-            seen.add(normalized)
-            link_type = "generic"
-            lowered = normalized.lower()
-            if any(keyword in lowered for keyword in ("verify", "verification", "confirm")):
-                link_type = "verify"
-            elif "reset" in lowered:
-                link_type = "reset_password"
-            links.append({"url": normalized, "type": link_type})
+    seen_types: set[str] = set()
+
+    def register(url: str) -> None:
+        normalized = normalize_link_candidate(url)
+        if not normalized or normalized in seen:
+            return
+        link_type = classify_action_link(normalized)
+        if not link_type or link_type in seen_types:
+            return
+        seen.add(normalized)
+        seen_types.add(link_type)
+        links.append({"url": normalized, "type": link_type})
+
+    for url in URL_RE.findall(text_body or ""):
+        register(url)
+
+    for match in HREF_RE.finditer(html_body or ""):
+        register(match.group(1) or match.group(2) or match.group(3) or "")
+
     return links
 
 
 def extract_otps(text_body: str, html_body: str) -> list[dict[str, str]]:
-    combined = "\n".join(part for part in (text_body, html_body) if part)
+    readable_html = html_to_text(html_body) if html_body else ""
+    combined = "\n".join(part for part in (text_body, readable_html) if part)
     found: list[dict[str, str]] = []
     seen: set[str] = set()
 
     for match in OTP_CONTEXT_RE.finditer(combined):
         code = match.group(1)
+        if not is_plausible_otp(code):
+            continue
         if code in seen:
             continue
         seen.add(code)
         context = combined[max(0, match.start() - 32): match.end() + 32].strip()
         found.append({"code": code, "context": context})
 
-    if not found:
+    if not found and has_action_context(combined):
         for match in GENERIC_CODE_RE.finditer(combined):
             code = match.group(0)
             if code in seen:
@@ -155,6 +256,67 @@ def extract_otps(text_body: str, html_body: str) -> list[dict[str, str]]:
 def extract_snippet(text_body: str) -> str:
     snippet = WHITESPACE_RE.sub(" ", (text_body or "").replace("\n", " ")).strip()
     return snippet[:180]
+
+
+def prefer_readable_text(text_body: str, html_body: str) -> str:
+    candidate = WHITESPACE_RE.sub(" ", (text_body or "")).strip()
+    lowered = candidate.lower()
+    noise_hits = sum(1 for marker in NOISE_MARKERS if marker in lowered)
+    if candidate and noise_hits < 2:
+        return text_body.strip()
+    if html_body:
+        return html_to_text(html_body)
+    return text_body.strip()
+
+
+def is_plausible_otp(code: str) -> bool:
+    normalized = str(code or "").strip()
+    if not normalized:
+        return False
+    if normalized.isdigit():
+        return 4 <= len(normalized) <= 10
+    return (
+        4 <= len(normalized) <= 10
+        and normalized.upper() == normalized
+        and normalized.isalnum()
+        and any(character.isdigit() for character in normalized)
+        and any(character.isalpha() for character in normalized)
+    )
+
+
+def has_action_context(value: str) -> bool:
+    lowered = str(value or "").lower()
+    return any(keyword in lowered for keyword in ACTION_CONTEXT_KEYWORDS)
+
+
+def normalize_link_candidate(value: str) -> str:
+    candidate = html.unescape(str(value or "")).strip().strip("\"'<>")
+    if not candidate.lower().startswith(("http://", "https://")):
+        return ""
+    return candidate.rstrip(".,)")
+
+
+def classify_action_link(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    path = (parsed.path or "").lower()
+    combined = " ".join(
+        part for part in ((parsed.netloc or "").lower(), path, (parsed.query or "").lower()) if part
+    )
+
+    if any(path.endswith(extension) for extension in ASSET_EXTENSIONS):
+        return None
+    if any(keyword in combined for keyword in ACTION_RESET_KEYWORDS):
+        return "reset_password"
+    if any(keyword in combined for keyword in ACTION_VERIFY_KEYWORDS):
+        return "verify"
+    return None
 
 
 def parse_received_at(message: Message) -> str:

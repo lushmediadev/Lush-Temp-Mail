@@ -19,6 +19,21 @@
 - Text tiếng Việt trong file source phải lưu UTF-8 chuẩn, không để mojibake.
 - API phải tối ưu cho luồng temp-mail admin: alias list, inbox by alias, OTP/link extraction, expire/delete.
 
+## UI Discipline
+
+- Mọi task tạo mới/chỉnh sửa/polish UI trong repo này đều phải dùng skill `uncodixfy`.
+- Trước khi sửa UI, phải đọc các file giao diện hiện có liên quan (`index.html`, `user.html`, `app.js`, `user.js`, `style.css`, `user.css`) để bám đúng visual language đang dùng.
+- Ưu tiên sửa trực tiếp theo pattern hiện hữu của app; không tự thêm nested cards, floating cards, detached panels, hero sections, hoặc ornamental badges nếu UI hiện tại không dùng.
+- Nếu một thay đổi UI không thể bám theo pattern sẵn có, phải nêu rõ lý do và giới hạn phạm vi khác biệt.
+
+## Subagent Use
+
+- Trước mỗi `Project Task`, phải tự đánh giá rõ có nên spawn subagent hay không và dựa trên tính độc lập thực sự của phần việc.
+- Trong repo này, ưu tiên dùng subagent cho exploration/read-only investigation hơn là implementation.
+- Không giao phần edit code/file cho subagent theo mặc định khi main agent có thể xử lý trực tiếp mà không bị chặn.
+- Chỉ spawn khi có ít nhất hai đầu việc độc lập, có thể chạy song song, và không gây trùng lặp với luồng chính.
+- Việc spawn phải tuân theo policy/tooling hiện hành; nếu không nên hoặc không được phép, phải ghi rõ quyết định giữ toàn bộ implementation ở luồng chính.
+
 ## Module Boundaries
 
 - Root static files (`index.html`, `app.js`, `style.css`, `logo.svg`) chịu trách nhiệm UI/admin shell.
