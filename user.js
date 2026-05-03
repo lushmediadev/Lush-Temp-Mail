@@ -100,7 +100,7 @@ async function onLookupSubmit(event) {
   event.preventDefault();
   const rawAlias = String(dom.aliasInput.value || '').trim();
   if (!rawAlias) {
-    setAliasError('Vui lÃ²ng nháº­p alias email');
+    setAliasError('Vui lòng nhập alias email');
     dom.aliasInput.focus();
     return;
   }
@@ -158,12 +158,12 @@ async function lookupAlias(rawAlias, options = {}) {
 
     if (!state.messages.length) {
       renderListEmpty(
-        'Alias chÆ°a cÃ³ email',
-        `Há»‡ thá»‘ng chÆ°a ghi nháº­n thÆ° nÃ o cho ${state.currentAlias}.`,
+        'Alias chưa có email',
+        `Hệ thống chưa ghi nhận thư nào cho ${state.currentAlias}.`,
       );
       resetDetail(
-        'ChÆ°a cÃ³ thÆ° Ä‘á»ƒ hiá»ƒn thá»‹',
-        'Khi alias nÃ y nháº­n email Ä‘áº§u tiÃªn, ná»™i dung sáº½ hiá»‡n á»Ÿ panel bÃªn pháº£i.',
+        'Chưa có thư để hiển thị',
+        'Khi alias này nhận email đầu tiên, nội dung sẽ hiện ở panel bên phải.',
       );
     } else if (preserveSelection && state.selectedMessageCache) {
       renderDetail(state.selectedMessageCache);
@@ -175,7 +175,7 @@ async function lookupAlias(rawAlias, options = {}) {
       scrollToLookupResults();
     }
     if (announceResult) {
-      showToast(state.messages.length ? `ÄÃ£ táº£i ${state.messages.length} email` : 'ChÆ°a tháº¥y email nÃ o cho alias nÃ y');
+      showToast(state.messages.length ? `Đã tải ${state.messages.length} email` : 'Chưa thấy email nào cho alias này');
     }
   } catch (error) {
     if (lookupToken !== activeLookupToken) {
@@ -189,9 +189,9 @@ async function lookupAlias(rawAlias, options = {}) {
     state.messageTranslations = {};
     state.messageTranslationVisibility = {};
     stopUserEventStream();
-    renderListEmpty('KhÃ´ng táº£i Ä‘Æ°á»£c inbox', error.message || 'CÃ³ lá»—i khi kiá»ƒm tra alias.');
-    resetDetail('Kiá»ƒm tra láº¡i alias', 'Alias khÃ´ng há»£p lá»‡ hoáº·c há»‡ thá»‘ng chÆ°a sáºµn sÃ ng.');
-    setAliasError(error.message || 'KhÃ´ng thá»ƒ kiá»ƒm tra alias');
+    renderListEmpty('Không tải được inbox', error.message || 'Có lỗi khi kiểm tra alias.');
+    resetDetail('Kiểm tra lại alias', 'Alias không hợp lệ hoặc hệ thống chưa sẵn sàng.');
+    setAliasError(error.message || 'Không thể kiểm tra alias');
   } finally {
     if (lookupToken === activeLookupToken) {
       setLookupBusy(false);
@@ -206,7 +206,7 @@ function resetShell() {
   dom.preLookupState.classList.remove('hidden');
   dom.currentAliasLabel.textContent = '-';
   dom.messageCountLabel.textContent = '0 email';
-  renderListEmpty('ChÆ°a cÃ³ email', 'Nháº­p alias phÃ­a trÃªn Ä‘á»ƒ kiá»ƒm tra há»™p thÆ°.');
+  renderListEmpty('Chưa có email', 'Nhập alias phía trên để kiểm tra hộp thư.');
   resetDetail();
 }
 
@@ -323,7 +323,7 @@ function renderListEmpty(title, description) {
 
 function renderMessages() {
   if (!state.messages.length) {
-    renderListEmpty('ChÆ°a cÃ³ email', 'Alias nÃ y hiá»‡n chÆ°a cÃ³ thÆ° nÃ o.');
+    renderListEmpty('Chưa có email', 'Alias này hiện chưa có thư nào.');
     return;
   }
 
@@ -566,7 +566,7 @@ function renderAttachmentSection(message) {
       </div>
       <div class="min-w-0">
         <p class="detail-attachment-name">${escapeHtml(attachment.filename || 'Unnamed attachment')}</p>
-        <p class="detail-attachment-meta">${escapeHtml(attachment.content_type || 'application/octet-stream')} â€¢ ${formatFileSize(attachment.size_bytes || 0)}</p>
+        <p class="detail-attachment-meta">${escapeHtml(attachment.content_type || 'application/octet-stream')} • ${formatFileSize(attachment.size_bytes || 0)}</p>
       </div>
     </div>
   `).join('');
@@ -574,7 +574,7 @@ function renderAttachmentSection(message) {
   return `
     <div class="detail-divider mt-6"></div>
     <div class="pt-6">
-      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tá»‡p Ä‘Ã­nh kÃ¨m</p>
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tệp đính kèm</p>
       <div class="detail-attachment-list mt-4">
         ${items}
       </div>
@@ -583,8 +583,8 @@ function renderAttachmentSection(message) {
 }
 
 function resetDetail(
-  title = 'Chá»n email Ä‘á»ƒ xem chi tiáº¿t',
-  description = 'Sau khi kiá»ƒm tra alias, chá»n má»™t email trong danh sÃ¡ch bÃªn trÃ¡i Ä‘á»ƒ má»Ÿ ná»™i dung.',
+  title = 'Chọn email để xem chi tiết',
+  description = 'Sau khi kiểm tra alias, chọn một email trong danh sách bên trái để mở nội dung.',
 ) {
   const html = `
     <div class="detail-card flex min-h-[560px] items-center justify-center p-6 sm:p-7">
@@ -772,7 +772,7 @@ function getMessagePreview(message) {
     return preview;
   }
 
-  return 'ChÆ°a cÃ³ preview cho email nÃ y.';
+  return 'Chưa có preview cho email này.';
 }
 
 function getInitials(value) {
@@ -821,7 +821,7 @@ function handleError(error) {
     window.location.replace('/');
     return;
   }
-  showToast(error.message || 'ÄÃ£ cÃ³ lá»—i xáº£y ra');
+  showToast(error.message || 'Đã có lỗi xảy ra');
 }
 
 async function api(url, options = {}) {
@@ -947,10 +947,10 @@ function formatRelativeDate(dateStr) {
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
 
-  if (minutes < 1) return 'Vá»«a xong';
-  if (minutes < 60) return `${minutes} phÃºt trÆ°á»›c`;
-  if (hours < 24) return `${hours} giá» trÆ°á»›c`;
-  if (days < 7) return `${days} ngÃ y trÆ°á»›c`;
+  if (minutes < 1) return 'Vừa xong';
+  if (minutes < 60) return `${minutes} phút trước`;
+  if (hours < 24) return `${hours} giờ trước`;
+  if (days < 7) return `${days} ngày trước`;
   return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' });
 }
 
