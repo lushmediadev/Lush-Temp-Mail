@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-05-04 00:00 - add_vps_migration_runbook
+- Added: `deploy/scripts/migrate_vps.sh` to install a fresh app checkout on a new VPS and copy runtime `.env` plus `deploy/data` from a source VPS.
+- Added: `deploy/MIGRATION.md` with the operator runbook and post-migration checks.
+- Changed: `deploy/README.md` now links the migration flow.
+- Affected files: deploy/scripts/migrate_vps.sh, deploy/MIGRATION.md, deploy/README.md
+- Impact/Risk: low; script is opt-in and does not write to the source VPS.
+
 ### 2026-03-21 18:15 - reenable_row_checkbox_without_widening_layout
 - Changed: row checkbox is visible again in the admin message list, but it is now positioned as an overlay inside the row instead of taking up horizontal layout space.
 - Fixed: restored the checkbox affordance without stretching the admin header or widening the message-list layout.

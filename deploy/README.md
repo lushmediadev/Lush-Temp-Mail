@@ -112,3 +112,14 @@ Recommended DNS for inbound temp mail:
 - `MX @ 10 mx.lushmedia.net` (`DNS only`)
 - `TXT @ v=spf1 mx a -all`
 - `TXT _dmarc v=DMARC1; p=none; rua=mailto:dmarc@lushmedia.net; pct=100`
+
+## 7. Migrate to another VPS
+
+Use `deploy/scripts/migrate_vps.sh` when moving this app to a new VPS. The migration style is:
+
+- fresh code checkout from GitHub
+- copy runtime `.env`
+- copy `deploy/data/`
+- rebuild/start Docker on the target VPS
+
+See `deploy/MIGRATION.md` for the full runbook.
