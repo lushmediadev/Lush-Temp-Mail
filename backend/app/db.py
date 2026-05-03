@@ -38,7 +38,8 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                imap_uid INTEGER NOT NULL UNIQUE,
+                imap_mailbox TEXT NOT NULL DEFAULT 'legacy',
+                imap_uid INTEGER NOT NULL,
                 message_id TEXT,
                 alias_id INTEGER,
                 recipient_address TEXT NOT NULL,
@@ -80,6 +81,7 @@ def init_db() -> None:
             ON messages(alias_id, received_at DESC);
             """
         )
+        _ensure_message_mailbox_namespace(conn)
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "important" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
@@ -94,6 +96,124 @@ def init_db() -> None:
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if "role" not in session_columns:
             conn.execute("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
+
+
+def _message_has_global_uid_unique(conn: sqlite3.Connection) -> bool:
+    for index in conn.execute("PRAGMA index_list(messages)").fetchall():
+        if not index["unique"]:
+            continue
+        columns = [row["name"] for row in conn.execute(f"PRAGMA index_info({index['name']})").fetchall()]
+        if columns == ["imap_uid"]:
+            return True
+    return False
+
+
+def _ensure_message_mailbox_namespace(conn: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+    needs_rebuild = "imap_mailbox" not in columns or _message_has_global_uid_unique(conn)
+    if not needs_rebuild:
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_mailbox_uid
+            ON messages(imap_mailbox, imap_uid)
+            """
+        )
+        return
+
+    conn.execute("ALTER TABLE messages RENAME TO messages_uid_migration_old")
+    conn.executescript(
+        """
+        CREATE TABLE messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            imap_mailbox TEXT NOT NULL DEFAULT 'legacy',
+            imap_uid INTEGER NOT NULL,
+            message_id TEXT,
+            alias_id INTEGER,
+            recipient_address TEXT NOT NULL,
+            from_name TEXT,
+            from_email TEXT,
+            subject TEXT,
+            snippet TEXT,
+            text_body TEXT,
+            html_body TEXT,
+            attachments_json TEXT NOT NULL DEFAULT '[]',
+            extracted_links_json TEXT NOT NULL DEFAULT '[]',
+            extracted_otps_json TEXT NOT NULL DEFAULT '[]',
+            raw_headers_json TEXT NOT NULL DEFAULT '{}',
+            received_at TEXT NOT NULL,
+            mailbox_received_at TEXT,
+            ingested_at TEXT,
+            unread INTEGER NOT NULL DEFAULT 1,
+            suppressed INTEGER NOT NULL DEFAULT 0,
+            important INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(alias_id) REFERENCES aliases(id)
+        );
+        """
+    )
+    old_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages_uid_migration_old)").fetchall()}
+    selectable = [
+        "id",
+        "imap_uid",
+        "message_id",
+        "alias_id",
+        "recipient_address",
+        "from_name",
+        "from_email",
+        "subject",
+        "snippet",
+        "text_body",
+        "html_body",
+        "attachments_json",
+        "extracted_links_json",
+        "extracted_otps_json",
+        "raw_headers_json",
+        "received_at",
+        "mailbox_received_at",
+        "ingested_at",
+        "unread",
+        "suppressed",
+        "important",
+    ]
+    select_parts = []
+    for column in selectable:
+        if column in old_columns:
+            select_parts.append(column)
+        elif column == "attachments_json":
+            select_parts.append("'[]' AS attachments_json")
+        elif column == "extracted_links_json":
+            select_parts.append("'[]' AS extracted_links_json")
+        elif column == "extracted_otps_json":
+            select_parts.append("'[]' AS extracted_otps_json")
+        elif column == "raw_headers_json":
+            select_parts.append("'{}' AS raw_headers_json")
+        elif column in {"unread"}:
+            select_parts.append("1 AS unread")
+        elif column in {"suppressed", "important"}:
+            select_parts.append("0 AS " + column)
+        else:
+            select_parts.append("NULL AS " + column)
+    conn.execute(
+        f"""
+        INSERT INTO messages(
+            {', '.join(['imap_mailbox'] + selectable)}
+        )
+        SELECT 'legacy', {', '.join(select_parts)}
+        FROM messages_uid_migration_old
+        """
+    )
+    conn.execute("DROP TABLE messages_uid_migration_old")
+    conn.executescript(
+        """
+        CREATE INDEX IF NOT EXISTS idx_messages_recipient_received_at
+        ON messages(recipient_address, received_at DESC);
+
+        CREATE INDEX IF NOT EXISTS idx_messages_alias_received_at
+        ON messages(alias_id, received_at DESC);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_mailbox_uid
+        ON messages(imap_mailbox, imap_uid);
+        """
+    )
 
 
 def row_to_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -128,6 +248,7 @@ def row_to_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
     language_hint = infer_language_hint(subject, readable_text)
     return {
         "id": row["id"],
+        "imap_mailbox": row["imap_mailbox"] if "imap_mailbox" in row.keys() else "legacy",
         "imap_uid": row["imap_uid"],
         "message_id": row["message_id"],
         "alias_id": row["alias_id"],
@@ -392,6 +513,7 @@ def _default_alias_expires_at() -> str | None:
 
 def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     recipient_address = normalize_address(payload["recipient_address"])
+    imap_mailbox = str(payload.get("imap_mailbox") or settings.imap_username or settings.central_mailbox or "default")
     alias = get_alias_by_address(recipient_address)
     if alias is None:
         alias = ensure_alias(recipient_address, source="inbound", expires_at=_default_alias_expires_at())
@@ -403,13 +525,14 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
         conn.execute(
             """
             INSERT OR IGNORE INTO messages(
-                imap_uid, message_id, alias_id, recipient_address, from_name, from_email, subject,
+                imap_mailbox, imap_uid, message_id, alias_id, recipient_address, from_name, from_email, subject,
                 snippet, text_body, html_body, attachments_json, extracted_links_json, extracted_otps_json, raw_headers_json,
                 received_at, mailbox_received_at, ingested_at, unread, suppressed
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0)
             """,
             (
+                imap_mailbox,
                 payload["imap_uid"],
                 payload.get("message_id", ""),
                 alias["id"],
@@ -430,7 +553,10 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
             ),
         )
         _refresh_alias_stats(conn, alias["id"])
-        row = conn.execute("SELECT * FROM messages WHERE imap_uid = ?", (payload["imap_uid"],)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM messages WHERE imap_mailbox = ? AND imap_uid = ?",
+            (imap_mailbox, payload["imap_uid"]),
+        ).fetchone()
     return row_to_message(row)
 
 

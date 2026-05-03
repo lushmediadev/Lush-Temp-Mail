@@ -26,9 +26,9 @@ Set real values for:
 
 For the current live stack, keep:
 
-- `IMAP_HOST=mail.congmail.top`
+- `IMAP_HOST=mx.lushmedia.net`
 - `IMAP_PORT=993`
-- `SMTP_HOST=mail.congmail.top`
+- `SMTP_HOST=mx.lushmedia.net`
 - `SMTP_PORT=587`
 - `SMTP_SECURITY=starttls`
 - `MAIL_SYNC_INTERVAL_S=4`
@@ -49,9 +49,9 @@ The recommended runtime mode is:
 
 By default the reply/forward composer can reuse the same central mailbox credentials:
 
-- `SMTP_USERNAME=contact@congmail.top`
+- `SMTP_USERNAME=contact@lushmedia.net`
 - `SMTP_PASSWORD=<same as IMAP_PASSWORD>`
-- `SMTP_FROM_ADDRESS=contact@congmail.top`
+- `SMTP_FROM_ADDRESS=contact@lushmedia.net`
 - `SMTP_FROM_NAME=LushMail`
 
 ## 3. Install helper
@@ -100,14 +100,15 @@ Recommended setup on this VPS:
 - connect this app to the external Docker network `mailstack_default`
 - let Caddy reverse proxy directly to `lushtempmail-app:8010`
 - do not publish the temp-mail app on a public host port
-- keep `IMAP_HOST=mail.congmail.top`, because the mailserver container already exposes that DNS name on `mailstack_default`
+- keep `IMAP_HOST=mx.lushmedia.net`, because the mailserver container exposes that DNS alias on `mailstack_default`
 
 ## 6. Mail prerequisite
 
-To support direct addresses like `abc123@lushmedia.net` without pre-creating aliases, the mail stack must enable a catch-all rule that forwards `@lushmedia.net` into `contact@congmail.top`. This app only consumes the central inbox via IMAP and auto-discovers aliases from inbound mail.
+To support direct addresses like `abc123@lushmedia.net` without pre-creating aliases, the mail stack must enable a catch-all rule that forwards `@lushmedia.net` into `contact@lushmedia.net`. This app only consumes the central inbox via IMAP and auto-discovers aliases from inbound mail.
 
 Recommended DNS for inbound temp mail:
 
-- `MX @ 10 mail.congmail.top` (`DNS only`)
+- `A mx 109.123.227.253` (`DNS only`)
+- `MX @ 10 mx.lushmedia.net` (`DNS only`)
 - `TXT @ v=spf1 mx a -all`
 - `TXT _dmarc v=DMARC1; p=none; rua=mailto:dmarc@lushmedia.net; pct=100`

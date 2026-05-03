@@ -29,7 +29,7 @@ class Settings:
         self.public_domain = os.getenv("TEMPMAIL_PUBLIC_DOMAIN", "mail.lushmedia.net")
         self.mail_domain = os.getenv("TEMPMAIL_MAIL_DOMAIN", "lushmedia.net")
         self.central_mailbox = os.getenv("CENTRAL_MAILBOX", f"contact@{self.mail_domain}")
-        self.imap_host = os.getenv("IMAP_HOST", "mail.congmail.top")
+        self.imap_host = os.getenv("IMAP_HOST", "mx.lushmedia.net")
         self.imap_port = int(os.getenv("IMAP_PORT", "993"))
         self.imap_username = os.getenv("IMAP_USERNAME", self.central_mailbox)
         self.imap_password = os.getenv("IMAP_PASSWORD", "")

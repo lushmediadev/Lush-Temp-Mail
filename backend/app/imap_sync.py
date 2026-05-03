@@ -258,6 +258,7 @@ class MailSyncService:
         raw_text_body, html_body = extract_text_parts(message)
         text_body = prefer_readable_text(raw_text_body, html_body)
         return {
+            "imap_mailbox": settings.imap_username,
             "imap_uid": uid,
             "message_id": message.get("Message-Id", ""),
             "recipient_address": recipient,
