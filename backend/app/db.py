@@ -355,6 +355,8 @@ def reactivate_alias(alias_id: int, additional_hours: int | None = None) -> dict
 
 
 def cleanup_expired_aliases(now_iso: str) -> int:
+    if settings.default_alias_hours <= 0:
+        return 0
     with _connect() as conn:
         cursor = conn.execute(
             "UPDATE aliases SET status = 'expired' WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= ?",
@@ -382,11 +384,17 @@ def cleanup_old_messages(cutoff_iso: str) -> int:
     return cursor.rowcount
 
 
+def _default_alias_expires_at() -> str | None:
+    if settings.default_alias_hours <= 0:
+        return None
+    return iso_in_hours(settings.default_alias_hours)
+
+
 def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     recipient_address = normalize_address(payload["recipient_address"])
     alias = get_alias_by_address(recipient_address)
     if alias is None:
-        alias = ensure_alias(recipient_address, source="inbound", expires_at=iso_in_hours(settings.default_alias_hours))
+        alias = ensure_alias(recipient_address, source="inbound", expires_at=_default_alias_expires_at())
 
     if alias["status"] != "active":
         return None

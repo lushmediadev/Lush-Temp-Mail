@@ -34,8 +34,8 @@ For the current live stack, keep:
 - `MAIL_SYNC_INTERVAL_S=4`
 - `MAIL_IDLE_ENABLED=true`
 - `MAIL_IDLE_TIMEOUT_S=1500`
-- `DEFAULT_ALIAS_HOURS=1440`
-- `MESSAGE_RETENTION_DAYS=60`
+- `DEFAULT_ALIAS_HOURS=0` to keep aliases active until manually expired or deleted
+- `MESSAGE_RETENTION_DAYS=0` to keep messages until manually deleted
 
 This app reads IMAP over the mail domain's real TLS endpoint. Do not switch back to
 `host.docker.internal`, because the temp-mail container is no longer relying on the

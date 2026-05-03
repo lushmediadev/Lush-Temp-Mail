@@ -23,6 +23,12 @@ from .utils import iso_in_hours, is_valid_local_part, normalize_lookup_address, 
 mail_sync = MailSyncService()
 
 
+def _expires_at_from_hours(hours: int | None) -> str | None:
+    if hours is None or hours <= 0:
+        return None
+    return iso_in_hours(hours)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     db.init_db()
@@ -152,7 +158,8 @@ def list_mailboxes(
 def create_mailbox(payload: dict[str, Any] = Body(default={}), _session=Depends(require_admin)) -> dict[str, Any]:
     requested_local_part = (payload.get("local_part") or "").strip().lower()
     label = (payload.get("label") or "").strip() or None
-    expires_in_hours = int(payload.get("expires_in_hours") or settings.default_alias_hours)
+    raw_expires_in_hours = payload.get("expires_in_hours")
+    expires_in_hours = int(raw_expires_in_hours) if raw_expires_in_hours is not None else settings.default_alias_hours
 
     if requested_local_part:
         if not is_valid_local_part(requested_local_part):
@@ -164,7 +171,7 @@ def create_mailbox(payload: dict[str, Any] = Body(default={}), _session=Depends(
         source = "generated"
 
     address = f"{local_part}@{settings.mail_domain}"
-    mailbox = db.ensure_alias(address, source=source, label=label, expires_at=iso_in_hours(expires_in_hours))
+    mailbox = db.ensure_alias(address, source=source, label=label, expires_at=_expires_at_from_hours(expires_in_hours))
     return {"item": mailbox}
 
 
@@ -173,7 +180,7 @@ def update_mailbox(alias_id: int, payload: dict[str, Any] = Body(default={}), _s
     label = payload.get("label")
     status = payload.get("status")
     expires_in_hours = payload.get("expires_in_hours")
-    expires_at = iso_in_hours(int(expires_in_hours)) if expires_in_hours else None
+    expires_at = _expires_at_from_hours(int(expires_in_hours)) if expires_in_hours is not None else None
     mailbox = db.update_alias(alias_id, label=label, expires_at=expires_at, status=status)
     if mailbox is None:
         raise HTTPException(status_code=404, detail="Mailbox không tồn tại")
@@ -190,7 +197,8 @@ def expire_mailbox(alias_id: int, _session=Depends(require_admin)) -> dict[str, 
 
 @app.post("/api/mailboxes/{alias_id}/reactivate")
 def reactivate_mailbox(alias_id: int, payload: dict[str, Any] = Body(default={}), _session=Depends(require_admin)) -> dict[str, Any]:
-    hours = int(payload.get("expires_in_hours") or settings.default_alias_hours)
+    raw_hours = payload.get("expires_in_hours")
+    hours = int(raw_hours) if raw_hours is not None else settings.default_alias_hours
     mailbox = db.reactivate_alias(alias_id, hours)
     if mailbox is None:
         raise HTTPException(status_code=404, detail="Mailbox không tồn tại")

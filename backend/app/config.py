@@ -44,8 +44,8 @@ class Settings:
         self.sync_enabled = _env_bool("MAIL_SYNC_ENABLED", True)
         self.idle_enabled = _env_bool("MAIL_IDLE_ENABLED", True)
         self.idle_timeout_s = int(os.getenv("MAIL_IDLE_TIMEOUT_S", "1500"))
-        self.default_alias_hours = int(os.getenv("DEFAULT_ALIAS_HOURS", "1440"))
-        self.message_retention_days = int(os.getenv("MESSAGE_RETENTION_DAYS", "60"))
+        self.default_alias_hours = int(os.getenv("DEFAULT_ALIAS_HOURS", "0"))
+        self.message_retention_days = int(os.getenv("MESSAGE_RETENTION_DAYS", "0"))
         self.secure_cookie = _env_bool("SECURE_COOKIE", False)
         self.log_level = os.getenv("LOG_LEVEL", "INFO")
         if self.admin_username == self.user_username:

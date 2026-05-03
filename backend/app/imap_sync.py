@@ -118,7 +118,8 @@ class MailSyncService:
             self._touch_heartbeat()
             self._set_status(last_sync_started_at=utc_now_iso(), last_error=None)
             db.cleanup_expired_aliases(utc_now_iso())
-            db.cleanup_old_messages(iso_days_ago(settings.message_retention_days))
+            if settings.message_retention_days > 0:
+                db.cleanup_old_messages(iso_days_ago(settings.message_retention_days))
             if not settings.sync_enabled or not settings.imap_password:
                 self._set_status(last_sync_finished_at=utc_now_iso())
                 return 0
