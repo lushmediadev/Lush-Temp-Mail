@@ -104,4 +104,10 @@ Recommended setup on this VPS:
 
 ## 6. Mail prerequisite
 
-To support direct addresses like `abc123@congmail.top` without pre-creating aliases, the mail stack must enable a catch-all rule that forwards `@congmail.top` into `contact@congmail.top`. This app only consumes the central inbox via IMAP and auto-discovers aliases from inbound mail.
+To support direct addresses like `abc123@lushmedia.net` without pre-creating aliases, the mail stack must enable a catch-all rule that forwards `@lushmedia.net` into `contact@congmail.top`. This app only consumes the central inbox via IMAP and auto-discovers aliases from inbound mail.
+
+Recommended DNS for inbound temp mail:
+
+- `MX @ 10 mail.congmail.top` (`DNS only`)
+- `TXT @ v=spf1 mx a -all`
+- `TXT _dmarc v=DMARC1; p=none; rua=mailto:dmarc@lushmedia.net; pct=100`
