@@ -540,10 +540,14 @@ body { overflow: hidden; }
   fill: currentColor;
 }
 
+.user-content-shell,
+.user-list-shell {
+  max-width: 980px;
+}
+
 .user-list-shell {
   display: grid;
   gap: 12px;
-  max-width: 980px;
 }
 
 .user-row {

@@ -182,15 +182,17 @@
       </main>
 
       <main id="usersView" class="hidden flex-1 flex-col min-w-0 app-main-shell">
-        <div class="border-b border-gray-100 px-4 sm:px-6 py-3 flex items-center justify-between bg-white">
-          <div class="flex items-center gap-3">
-            <h3 class="font-fustat text-lg font-bold text-gray-900">Người dùng</h3>
-            <span id="userCount" class="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-0.5 rounded-full">0 user</span>
+        <div class="border-b border-gray-100 px-4 sm:px-6 py-3 bg-white">
+          <div class="user-content-shell flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <h3 class="font-fustat text-lg font-bold text-gray-900">Người dùng</h3>
+              <span id="userCount" class="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-0.5 rounded-full">0 user</span>
+            </div>
+            <button id="createUserBtn" type="button" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-lush-500 hover:bg-lush-600 text-white text-sm font-semibold transition-colors flex-shrink-0">
+              <i data-lucide="user-plus" class="w-4 h-4"></i>
+              Tạo user
+            </button>
           </div>
-          <button id="createUserBtn" type="button" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-lush-500 hover:bg-lush-600 text-white text-sm font-semibold transition-colors">
-            <i data-lucide="user-plus" class="w-4 h-4"></i>
-            Tạo user
-          </button>
         </div>
 
         <div class="flex-1 overflow-y-auto bg-white px-4 sm:px-6 py-5">
