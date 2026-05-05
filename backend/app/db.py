@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
+import secrets
 import sqlite3
 from typing import Any
 
@@ -8,6 +11,9 @@ from .config import settings
 from .parser import decode_mime_text, extract_links, extract_otps, html_to_text
 from .translator import DEFAULT_TARGET_LANGUAGE, infer_language_hint, should_offer_translation
 from .utils import iso_in_hours, normalize_address, split_address, utc_now_iso
+
+
+PASSWORD_HASH_ITERATIONS = 260_000
 
 
 def _connect() -> sqlite3.Connection:
@@ -69,6 +75,16 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_login_at TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -96,6 +112,7 @@ def init_db() -> None:
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if "role" not in session_columns:
             conn.execute("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
+        _seed_default_users(conn)
 
 
 def _message_has_global_uid_unique(conn: sqlite3.Connection) -> bool:
@@ -300,6 +317,156 @@ def row_to_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "has_links": bool(row["has_links"]),
         "has_otps": bool(row["has_otps"]),
     }
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_urlsafe(18)
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        PASSWORD_HASH_ITERATIONS,
+    ).hex()
+    return f"pbkdf2_sha256${PASSWORD_HASH_ITERATIONS}${salt}${password_hash}"
+
+
+def verify_password(password: str, password_hash: str) -> bool:
+    try:
+        algorithm, iterations_raw, salt, expected_hash = password_hash.split("$", 3)
+        iterations = int(iterations_raw)
+    except (ValueError, TypeError):
+        return False
+    if algorithm != "pbkdf2_sha256" or iterations < 1 or not salt or not expected_hash:
+        return False
+    actual_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    ).hex()
+    return hmac.compare_digest(actual_hash, expected_hash)
+
+
+def row_to_user(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "role": row["role"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "last_login_at": row["last_login_at"],
+    }
+
+
+def _insert_user(conn: sqlite3.Connection, *, username: str, password: str, role: str) -> dict[str, Any]:
+    now = utc_now_iso()
+    cursor = conn.execute(
+        """
+        INSERT INTO users(username, password_hash, role, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (username, hash_password(password), role, now, now),
+    )
+    row = conn.execute("SELECT * FROM users WHERE id = ?", (cursor.lastrowid,)).fetchone()
+    return row_to_user(row)
+
+
+def _seed_default_users(conn: sqlite3.Connection) -> None:
+    existing_count = conn.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"]
+    if existing_count:
+        return
+    _insert_user(conn, username=settings.admin_username, password=settings.admin_password, role="admin")
+    _insert_user(conn, username=settings.user_username, password=settings.user_password, role="user")
+
+
+def list_users() -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM users
+            ORDER BY CASE role WHEN 'admin' THEN 0 ELSE 1 END, username COLLATE NOCASE ASC
+            """
+        ).fetchall()
+    return [row_to_user(row) for row in rows]
+
+
+def get_user(user_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return row_to_user(row)
+
+
+def count_admin_users(*, exclude_user_id: int | None = None) -> int:
+    query = "SELECT COUNT(*) AS count FROM users WHERE role = 'admin'"
+    params: tuple[Any, ...] = ()
+    if exclude_user_id is not None:
+        query += " AND id != ?"
+        params = (exclude_user_id,)
+    with _connect() as conn:
+        row = conn.execute(query, params).fetchone()
+    return int(row["count"] if row else 0)
+
+
+def create_user(*, username: str, password: str, role: str) -> dict[str, Any]:
+    with _connect() as conn:
+        return _insert_user(conn, username=username, password=password, role=role)
+
+
+def update_user(
+    user_id: int,
+    *,
+    username: str | None = None,
+    password: str | None = None,
+    role: str | None = None,
+) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            return None
+
+        old_username = row["username"]
+        next_username = username if username is not None else row["username"]
+        next_role = role if role is not None else row["role"]
+        next_password_hash = hash_password(password) if password is not None else row["password_hash"]
+        now = utc_now_iso()
+        conn.execute(
+            """
+            UPDATE users
+            SET username = ?, password_hash = ?, role = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (next_username, next_password_hash, next_role, now, user_id),
+        )
+        if next_username != old_username or next_role != row["role"]:
+            conn.execute(
+                "UPDATE sessions SET username = ?, role = ? WHERE username = ?",
+                (next_username, next_role, old_username),
+            )
+        updated = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return row_to_user(updated)
+
+
+def delete_user(user_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM sessions WHERE username = ?", (row["username"],))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    return row_to_user(row)
+
+
+def authenticate_user(username: str, password: str) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+        if row is None or not verify_password(password, row["password_hash"]):
+            return None
+        now = utc_now_iso()
+        conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (now, row["id"]))
+        updated = conn.execute("SELECT * FROM users WHERE id = ?", (row["id"],)).fetchone()
+    return row_to_user(updated)
 
 
 def create_session(token: str, username: str, role: str, expires_at: str) -> None:

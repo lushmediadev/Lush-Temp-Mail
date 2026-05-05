@@ -15,6 +15,9 @@ const state = {
   currentPage: 1,
   composeDraft: null,
   messageListSignature: '',
+  currentView: 'mail',
+  users: [],
+  editingUserId: null,
 };
 
 const dom = {};
@@ -54,6 +57,10 @@ function cacheDom() {
     'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay', 'sidebarToggle',
     'closeSidebarBtn', 'mainSearch', 'deleteAllBtn', 'toast',
     'toastMsg', 'closeMobileDetailBtn', 'paginationInfo', 'paginationControls',
+    'mailView', 'usersView', 'usersTabBtn', 'userCount', 'userList', 'userEmptyState',
+    'createUserBtn', 'userModal', 'userForm', 'userModalTitle', 'userUsernameInput',
+    'userPasswordInput', 'userPasswordHint', 'userRoleInput', 'userFormError',
+    'closeUserModalBtn', 'cancelUserFormBtn', 'saveUserBtn', 'emailDetail',
   ];
   ids.forEach((id) => { dom[id] = document.getElementById(id); });
 }
@@ -67,9 +74,21 @@ function bindEvents() {
   dom.deleteAllBtn.addEventListener('click', () => deleteAllMessagesInScope().catch(handleError));
   dom.mainSearch.addEventListener('input', onMainSearchChange);
   dom.closeMobileDetailBtn.addEventListener('click', closeMobileDetail);
+  dom.usersTabBtn.addEventListener('click', () => setAdminView('users'));
+  dom.createUserBtn.addEventListener('click', openCreateUserModal);
+  dom.userForm.addEventListener('submit', onUserFormSubmit);
+  dom.closeUserModalBtn.addEventListener('click', closeUserModal);
+  dom.cancelUserFormBtn.addEventListener('click', closeUserModal);
+  dom.userModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.userModalClose === 'true') {
+      closeUserModal();
+    }
+  });
 
   document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
-    button.addEventListener('click', () => setMailFilter(button.dataset.filter));
+    if (button.dataset.filter) {
+      button.addEventListener('click', () => setMailFilter(button.dataset.filter));
+    }
   });
 
   document.addEventListener('click', onDocumentClick);
@@ -93,6 +112,9 @@ function onDocumentClick(event) {
 
 function onGlobalKeyDown(event) {
   if (isEditableTarget(event.target)) {
+    return;
+  }
+  if (state.currentView !== 'mail') {
     return;
   }
 
@@ -198,6 +220,9 @@ async function logout() {
   state.currentPage = 1;
   state.composeDraft = null;
   state.messageListSignature = '';
+  state.currentView = 'mail';
+  state.users = [];
+  state.editingUserId = null;
   stopAutoRefresh();
   stopRelativeTimeTicker();
   stopAdminEventStream();
@@ -219,6 +244,7 @@ function showLogin() {
 function showApp() {
   dom.loginPage.classList.add('hidden');
   dom.appPage.classList.remove('hidden');
+  setAdminView('mail');
   lucide.createIcons();
 }
 
@@ -340,7 +366,31 @@ function closeSidebar() {
   dom.sidebarOverlay.classList.add('hidden');
 }
 
+function setAdminView(viewName) {
+  const nextView = viewName === 'users' ? 'users' : 'mail';
+  state.currentView = nextView;
+  dom.appPage.classList.toggle('users-mode', nextView === 'users');
+  dom.mailView.classList.toggle('hidden', nextView !== 'mail');
+  dom.mailView.classList.toggle('flex', nextView === 'mail');
+  dom.usersView.classList.toggle('hidden', nextView !== 'users');
+  dom.usersView.classList.toggle('flex', nextView === 'users');
+  document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
+    if (button.dataset.filter) {
+      button.classList.toggle('active', nextView === 'mail' && button.dataset.filter === state.currentFilter);
+    }
+  });
+  dom.usersTabBtn.classList.toggle('active', nextView === 'users');
+  if (nextView === 'users') {
+    closeMobileDetail();
+    resetDetail();
+    loadUsers().catch(handleError);
+  }
+  closeSidebar();
+  lucide.createIcons();
+}
+
 function setMailFilter(filterName) {
+  setAdminView('mail');
   if (state.currentFilter === filterName) {
     return;
   }
@@ -570,6 +620,165 @@ function renderMessages() {
 
   lucide.createIcons();
   updateBulkToolbar();
+}
+
+async function loadUsers() {
+  const payload = await api('/api/users');
+  state.users = payload.items || [];
+  renderUsers();
+}
+
+function renderUsers() {
+  dom.userCount.textContent = `${state.users.length} user`;
+  if (!state.users.length) {
+    dom.userList.innerHTML = '';
+    dom.userEmptyState.classList.remove('hidden');
+    lucide.createIcons();
+    return;
+  }
+
+  dom.userEmptyState.classList.add('hidden');
+  dom.userList.innerHTML = state.users.map((user) => {
+    const isCurrentUser = state.session?.username === user.username;
+    const initials = buildUserInitials(user.username);
+    const roleLabel = user.role === 'admin' ? 'ADMIN' : 'USER';
+    const lastLogin = user.last_login_at ? formatFullDate(user.last_login_at) : 'Chưa đăng nhập';
+    const createdAt = user.created_at ? formatFullDate(user.created_at) : '-';
+    const deleteDisabled = isCurrentUser ? 'disabled' : '';
+    const deleteTitle = isCurrentUser ? 'Không thể xóa tài khoản đang đăng nhập' : 'Xóa user';
+
+    return `
+      <div class="user-row" data-user-id="${user.id}">
+        <div class="user-avatar">${escapeHtml(initials)}</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-sm font-bold text-gray-900">${escapeHtml(user.username)}</p>
+            <span class="user-role-badge ${user.role === 'admin' ? 'admin' : ''}">${roleLabel}</span>
+            ${isCurrentUser ? '<span class="text-xs font-semibold text-lush-600">đang đăng nhập</span>' : ''}
+          </div>
+          <p class="text-sm text-gray-500 mt-1">@${escapeHtml(user.username)}</p>
+          <p class="text-xs text-gray-400 mt-1">Tạo: ${escapeHtml(createdAt)} · Login gần nhất: ${escapeHtml(lastLogin)}</p>
+        </div>
+        <div class="flex items-center gap-1 flex-shrink-0">
+          <button class="user-action-btn" type="button" title="Sửa user" data-edit-user="${user.id}">
+            <i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i>
+          </button>
+          <button class="user-action-btn danger" type="button" title="${escapeAttribute(deleteTitle)}" data-delete-user="${user.id}" ${deleteDisabled}>
+            <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  dom.userList.querySelectorAll('[data-edit-user]').forEach((button) => {
+    button.addEventListener('click', () => openEditUserModal(Number(button.dataset.editUser)));
+  });
+  dom.userList.querySelectorAll('[data-delete-user]').forEach((button) => {
+    button.addEventListener('click', () => deleteUser(Number(button.dataset.deleteUser)).catch(handleError));
+  });
+  lucide.createIcons();
+}
+
+function buildUserInitials(username) {
+  const cleaned = String(username || '').trim();
+  if (!cleaned) {
+    return '?';
+  }
+  return cleaned.slice(0, 2).toUpperCase();
+}
+
+function openCreateUserModal() {
+  state.editingUserId = null;
+  dom.userModalTitle.textContent = 'Tạo user';
+  dom.userUsernameInput.value = '';
+  dom.userPasswordInput.value = '';
+  dom.userPasswordInput.required = true;
+  dom.userPasswordHint.classList.add('hidden');
+  dom.userRoleInput.value = 'user';
+  dom.userFormError.classList.add('hidden');
+  dom.saveUserBtn.textContent = 'Tạo user';
+  openUserModal();
+}
+
+function openEditUserModal(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    return;
+  }
+  state.editingUserId = userId;
+  dom.userModalTitle.textContent = 'Sửa user';
+  dom.userUsernameInput.value = user.username || '';
+  dom.userPasswordInput.value = '';
+  dom.userPasswordInput.required = false;
+  dom.userPasswordHint.classList.remove('hidden');
+  dom.userRoleInput.value = user.role || 'user';
+  dom.userFormError.classList.add('hidden');
+  dom.saveUserBtn.textContent = 'Lưu';
+  openUserModal();
+}
+
+function openUserModal() {
+  dom.userModal.classList.remove('hidden');
+  dom.userModal.classList.add('flex');
+  window.setTimeout(() => dom.userUsernameInput.focus(), 30);
+  lucide.createIcons();
+}
+
+function closeUserModal() {
+  dom.userModal.classList.add('hidden');
+  dom.userModal.classList.remove('flex');
+  state.editingUserId = null;
+}
+
+async function onUserFormSubmit(event) {
+  event.preventDefault();
+  dom.userFormError.classList.add('hidden');
+  dom.saveUserBtn.disabled = true;
+  const editingUserId = state.editingUserId;
+  const isEditing = Boolean(editingUserId);
+
+  const payload = {
+    username: dom.userUsernameInput.value.trim(),
+    role: dom.userRoleInput.value,
+  };
+  const password = dom.userPasswordInput.value;
+  if (!isEditing || password) {
+    payload.password = password;
+  }
+
+  try {
+    const url = isEditing ? `/api/users/${editingUserId}` : '/api/users';
+    const method = isEditing ? 'PATCH' : 'POST';
+    const response = await api(url, { method, body: JSON.stringify(payload) });
+    if (isEditing && state.session?.username) {
+      const previousUser = state.users.find((item) => item.id === editingUserId);
+      if (previousUser?.username === state.session.username) {
+        state.session = { username: response.item.username, role: response.item.role };
+      }
+    }
+    closeUserModal();
+    await loadUsers();
+    showToast(isEditing ? 'Đã cập nhật user' : 'Đã tạo user');
+  } catch (error) {
+    dom.userFormError.textContent = error.message || 'Không lưu được user';
+    dom.userFormError.classList.remove('hidden');
+  } finally {
+    dom.saveUserBtn.disabled = false;
+  }
+}
+
+async function deleteUser(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) {
+    return;
+  }
+  if (!window.confirm(`Xóa user ${user.username}?`)) {
+    return;
+  }
+  await api(`/api/users/${userId}`, { method: 'DELETE' });
+  await loadUsers();
+  showToast('Đã xóa user');
 }
 
 async function handleMessageRowClick(messageId, event) {

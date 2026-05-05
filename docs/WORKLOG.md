@@ -502,3 +502,11 @@
 - Enriched `backend/app/db.py` detail payloads with `language_hint` and `can_translate`, then updated `app.js` so admin keeps iframe-based HTML rendering while translated and automatically hides translation affordances for Vietnamese mail.
 - Ported the same translation flow into `user.js` and `user.css`, including the translate toggle, translated HTML iframe rendering, same-language skip behavior, and cache-busted asset references in `index.html` / `user.html`.
 - Verified with `node --check` for both frontend bundles, `py_compile` for backend files, and `.venv\Scripts\python.exe -m pytest -q backend/tests/test_parser.py backend/tests/test_translator.py` passing `10/10`.
+
+## 2026-05-05 11:35 - Add admin user management tab
+
+- User requested a new admin sidebar tab to manage the two current app accounts and future users directly from the mail app UI, with only username, password, and role fields.
+- Added a SQLite `users` table seeded from existing `ADMIN_USERNAME/ADMIN_PASSWORD` and `USER_USERNAME/USER_PASSWORD` on first migration, then changed login to authenticate against that table.
+- Added admin-only `/api/users` CRUD endpoints with safeguards for the current logged-in account and the last remaining admin.
+- Added the `Người dùng` tab to the existing LushMail admin shell, plus a compact list row with edit/delete icon buttons and a simple create/edit modal matching the current light UI language.
+- Verified with `python -m pytest -q`, backend `py_compile`, and `node --check app.js`.

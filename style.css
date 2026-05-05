@@ -29,6 +29,10 @@ body { overflow: hidden; }
   min-height: 0;
 }
 
+#appPage.users-mode #emailDetail {
+  display: none !important;
+}
+
 .folder-btn { color: #6b7280; }
 .folder-btn:hover { background: #f9fafb; color: #374151; }
 .folder-btn.active { background: #fff7f5; color: #ff5528; }
@@ -534,6 +538,95 @@ body { overflow: hidden; }
 
 .row-star-btn.active svg {
   fill: currentColor;
+}
+
+.user-list-shell {
+  display: grid;
+  gap: 12px;
+  max-width: 980px;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #eceff3;
+  border-radius: 14px;
+  background: #ffffff;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.user-row:hover {
+  border-color: #ffd9cc;
+  background: #fffdfb;
+}
+
+.user-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff7b57 0%, #ff5528 100%);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.user-role-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.user-role-badge.admin {
+  background: #fff0eb;
+  color: #cc3f18;
+}
+
+.user-action-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #6b7280;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.user-action-btn:hover {
+  border-color: #e5e7eb;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.user-action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.user-action-btn:disabled:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #6b7280;
+}
+
+.user-action-btn.danger:hover {
+  border-color: #ffd9cc;
+  background: #fff7f5;
+  color: #ff5528;
 }
 
 .detail-chip {

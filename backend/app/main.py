@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -27,6 +28,31 @@ def _expires_at_from_hours(hours: int | None) -> str | None:
     if hours is None or hours <= 0:
         return None
     return iso_in_hours(hours)
+
+
+def _clean_username(value: Any) -> str:
+    username = str(value or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Tên tài khoản là bắt buộc")
+    if any(char.isspace() for char in username):
+        raise HTTPException(status_code=400, detail="Tên tài khoản không được chứa khoảng trắng")
+    return username
+
+
+def _clean_role(value: Any) -> str:
+    role = str(value or "").strip().lower()
+    if role not in {"admin", "user"}:
+        raise HTTPException(status_code=400, detail="Role phải là admin hoặc user")
+    return role
+
+
+def _clean_password(value: Any, *, required: bool) -> str | None:
+    password = str(value or "")
+    if not password:
+        if required:
+            raise HTTPException(status_code=400, detail="Mật khẩu là bắt buộc")
+        return None
+    return password
 
 
 @asynccontextmanager
@@ -121,12 +147,10 @@ async def stream_admin_events(request: Request, _session=Depends(require_admin))
 def login(response: Response, payload: dict[str, str] = Body(...)) -> dict[str, Any]:
     username = (payload.get("username") or payload.get("email") or "").strip()
     password = payload.get("password", "")
-    if username == settings.admin_username and password == settings.admin_password:
-        session = create_session(response, settings.admin_username, "admin")
-    elif username == settings.user_username and password == settings.user_password:
-        session = create_session(response, settings.user_username, "user")
-    else:
+    user = db.authenticate_user(username, password)
+    if user is None:
         raise HTTPException(status_code=401, detail="Sai tài khoản hoặc mật khẩu")
+    session = create_session(response, user["username"], user["role"])
     return {
         "ok": True,
         "user": {"username": session["username"], "role": session["role"]},
@@ -143,6 +167,63 @@ def logout(response: Response, session=Depends(require_session)) -> dict[str, bo
 @app.get("/api/auth/session")
 def session(session=Depends(require_session)) -> dict[str, Any]:
     return {"ok": True, "user": {"username": session["username"], "role": session["role"]}, "expires_at": session["expires_at"]}
+
+
+@app.get("/api/users")
+def list_users(_session=Depends(require_admin)) -> dict[str, Any]:
+    return {"items": db.list_users()}
+
+
+@app.post("/api/users")
+def create_user(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    username = _clean_username(payload.get("username"))
+    password = _clean_password(payload.get("password"), required=True)
+    role = _clean_role(payload.get("role"))
+    try:
+        user = db.create_user(username=username, password=password, role=role)
+    except sqlite3.IntegrityError as error:
+        raise HTTPException(status_code=409, detail="Tên tài khoản đã tồn tại") from error
+    return {"item": user}
+
+
+@app.patch("/api/users/{user_id}")
+def update_user(
+    user_id: int,
+    payload: dict[str, Any] = Body(default={}),
+    session=Depends(require_admin),
+) -> dict[str, Any]:
+    current_user = db.get_user(user_id)
+    if current_user is None:
+        raise HTTPException(status_code=404, detail="User không tồn tại")
+
+    username = _clean_username(payload.get("username")) if "username" in payload else None
+    password = _clean_password(payload.get("password"), required=False) if "password" in payload else None
+    role = _clean_role(payload.get("role")) if "role" in payload else None
+    if current_user["role"] == "admin" and role == "user" and db.count_admin_users(exclude_user_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="Không thể hạ quyền admin cuối cùng")
+
+    try:
+        user = db.update_user(user_id, username=username, password=password, role=role)
+    except sqlite3.IntegrityError as error:
+        raise HTTPException(status_code=409, detail="Tên tài khoản đã tồn tại") from error
+    if user is None:
+        raise HTTPException(status_code=404, detail="User không tồn tại")
+    if session["username"] == current_user["username"]:
+        session["username"] = user["username"]
+        session["role"] = user["role"]
+    return {"item": user}
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, session=Depends(require_admin)) -> dict[str, Any]:
+    current_user = db.get_user(user_id)
+    if current_user is None:
+        raise HTTPException(status_code=404, detail="User không tồn tại")
+    if current_user["username"] == session["username"]:
+        raise HTTPException(status_code=400, detail="Không thể xóa tài khoản đang đăng nhập")
+    if current_user["role"] == "admin" and db.count_admin_users(exclude_user_id=user_id) == 0:
+        raise HTTPException(status_code=400, detail="Không thể xóa admin cuối cùng")
+    return {"item": db.delete_user(user_id)}
 
 
 @app.get("/api/mailboxes")

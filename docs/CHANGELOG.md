@@ -465,3 +465,10 @@
 - Fixed: Translating an HTML email no longer collapses the layout into plain text, and emails already in Vietnamese no longer show or apply a broken `Ti?ng Vi?t -> Ti?ng Vi?t` translation state.
 - Affected files: backend/app/translator.py, backend/app/db.py, backend/tests/test_translator.py, app.js, user.js, user.css, index.html, user.html
 - Impact/Risk: low-medium; translation behavior changed on both readers, but syntax and regression tests pass and the fallback path still preserves plain-text emails.
+
+### 2026-05-05 11:35 - add_admin_user_management
+- Added: Admin sidebar now has a `Người dùng` tab with create/edit/delete user controls.
+- Changed: Auth accounts are now stored in SQLite `users`, seeded from existing env admin/user credentials on first migration; login reads from DB instead of fixed env comparison.
+- Fixed: Admin can update username/password/role without editing VPS env, while safeguards block deleting the current account or removing the last admin.
+- Affected files: backend/app/db.py, backend/app/main.py, backend/tests/test_users.py, index.html, app.js, style.css
+- Impact/Risk: medium; auth storage changed, but env credentials remain the initial seed path and regression tests cover seeding/auth/update.
