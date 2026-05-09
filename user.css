@@ -376,22 +376,169 @@ body {
 }
 
 @media (max-width: 1023px) {
+  body.mobile-reader-open {
+    overflow: hidden;
+  }
+
   .hero-visual {
     display: none;
+  }
+
+  .lookup-hero-grid {
+    display: block;
   }
 
   .shell-grid {
     min-height: auto;
   }
+
+  .desktop-detail-pane {
+    display: none;
+  }
+
+  #messageList {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .mobile-reader {
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-reader-header {
+    padding-top: max(12px, env(safe-area-inset-top));
+  }
+
+  .mobile-reader-content {
+    min-height: 0;
+    padding: 0 16px calc(36px + env(safe-area-inset-bottom));
+  }
+
+  .mobile-reader .detail-card {
+    min-height: 0;
+    padding: 22px 0 0 !important;
+  }
+
+  .mobile-reader .detail-card h4 {
+    font-size: 28px;
+    line-height: 1.22;
+  }
+
+  .mobile-reader .detail-body-render {
+    overflow: visible;
+  }
+
+  .mobile-reader .detail-html-frame {
+    min-height: 240px;
+  }
 }
 
 @media (max-width: 767px) {
+  .lookup-hero {
+    min-height: 0;
+  }
+
+  .lookup-nav {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+
+  .lookup-nav img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .lookup-nav .font-fustat {
+    font-size: 24px;
+  }
+
+  .lookup-nav button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .lookup-kicker {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+  }
+
+  .lookup-title {
+    margin-top: 18px;
+    font-size: 32px !important;
+    line-height: 1.16 !important;
+  }
+
+  .lookup-description {
+    margin-top: 14px;
+    font-size: 15px;
+    line-height: 1.75;
+  }
+
+  .lookup-form {
+    margin-top: 22px;
+  }
+
+  #lookupForm input {
+    min-height: 52px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+
+  #lookupBtn {
+    min-height: 52px;
+    width: 100%;
+  }
+
+  main {
+    padding-top: 24px !important;
+    padding-bottom: 28px !important;
+  }
+
+  #currentAliasLabel {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .shell-grid {
+    display: block;
+    border-left: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+  }
+
   .user-message-row {
     padding: 14px 16px;
   }
 
   .user-message-top {
     align-items: center;
+  }
+
+  .user-message-subject,
+  .user-message-snippet {
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .user-message-subject {
+    -webkit-line-clamp: 2;
+  }
+
+  .user-message-snippet {
+    -webkit-line-clamp: 2;
+  }
+
+  #listEmptyState {
+    padding-top: 44px;
+    padding-bottom: 44px;
+  }
+
+  .detail-translation-note {
+    border-radius: 8px;
   }
 }
 

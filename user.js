@@ -216,8 +216,8 @@ function showShell() {
 }
 
 function scrollToLookupResults() {
-  const formTop = dom.lookupForm.getBoundingClientRect().top + window.scrollY;
-  const targetTop = Math.max(formTop - 45, 0);
+  const target = window.innerWidth < 768 ? dom.lookupShell : dom.lookupForm;
+  const targetTop = Math.max(target.getBoundingClientRect().top + window.scrollY - 16, 0);
   const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
   window.scrollTo({
@@ -604,10 +604,15 @@ function resetDetail(
 
 function openMobileDetail() {
   dom.mobileDetail.classList.remove('hidden');
+  document.body.classList.add('mobile-reader-open');
+  dom.mobileDetail.scrollTop = 0;
+  window.setTimeout(syncEmailFrameHeights, 50);
+  window.setTimeout(syncEmailFrameHeights, 280);
 }
 
 function closeMobileDetail() {
   dom.mobileDetail.classList.add('hidden');
+  document.body.classList.remove('mobile-reader-open');
 }
 
 function setLookupBusy(isBusy) {
@@ -913,6 +918,12 @@ function syncEmailFrameHeights() {
         const bodyHeight = doc.body ? doc.body.scrollHeight : 0;
         const htmlHeight = doc.documentElement ? doc.documentElement.scrollHeight : 0;
         frame.style.height = `${Math.max(bodyHeight, htmlHeight, 240)}px`;
+        doc.querySelectorAll('img').forEach((image) => {
+          if (!image.dataset.heightObserverBound) {
+            image.dataset.heightObserverBound = 'true';
+            image.addEventListener('load', applyHeight, { once: true });
+          }
+        });
       } catch {
         frame.style.height = '420px';
       }

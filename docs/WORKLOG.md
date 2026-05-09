@@ -510,3 +510,11 @@
 - Added admin-only `/api/users` CRUD endpoints with safeguards for the current logged-in account and the last remaining admin.
 - Added the `Người dùng` tab to the existing LushMail admin shell, plus a compact list row with edit/delete icon buttons and a simple create/edit modal matching the current light UI language.
 - Verified with `python -m pytest -q`, backend `py_compile`, and `node --check app.js`.
+
+## 2026-05-09 11:40 - Improve mobile user inbox reader
+
+- User reported the mobile reader had nested/competing scroll areas: the email body could not scroll fully and the page scroll stopped before the end of the message.
+- Added concise bootstrap memory files (`PROJECT_BRIEF`, `MEMORY_INDEX`, `DECISIONS_INDEX`, `UI_SYSTEM`) because this repo still only had the older long context docs.
+- Reworked the user mobile flow so search results use normal page scroll, the desktop reading pane is hidden under `1024px`, and opening a message locks body scroll while the full-screen reader overlay handles all detail scrolling.
+- Updated `user.js` to scroll mobile lookups to the result shell and re-measure email iframe heights after the mobile overlay opens, including image load callbacks.
+- Verified with `node --check user.js`, `node --check app.js`, `pytest -q` passing `12/12`, and a Playwright/Chrome mobile smoke confirming `bodyOverflow=hidden`, desktop pane hidden, list overflow visible, and reader scroll working.

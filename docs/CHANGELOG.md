@@ -472,3 +472,10 @@
 - Fixed: Admin can update username/password/role without editing VPS env, while safeguards block deleting the current account or removing the last admin.
 - Affected files: backend/app/db.py, backend/app/main.py, backend/tests/test_users.py, index.html, app.js, style.css
 - Impact/Risk: medium; auth storage changed, but env credentials remain the initial seed path and regression tests cover seeding/auth/update.
+
+### 2026-05-09 11:40 - improve_user_mobile_reader
+- Added: Concise project memory files for faster future task bootstrap.
+- Changed: User mobile lookup now scrolls directly to the results shell, hides the desktop reading pane on mobile, and lets the message list use normal page scroll.
+- Fixed: Mobile reader is now the only scroll container while a message is open, with body scroll locked and iframe heights refreshed after the overlay opens.
+- Affected files: user.html, user.css, user.js, docs/PROJECT_BRIEF.md, docs/MEMORY_INDEX.md, docs/DECISIONS_INDEX.md, docs/UI_SYSTEM.md
+- Impact/Risk: low-medium; only the user inbox mobile layout/scroll behavior changed, desktop layout is intentionally preserved.
