@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-05-12 00:00 - attachment_download_and_forward_payloads
+- Added: persisted inbound attachment payloads in `message_attachments`, with IMAP fallback fetch for older rows that only had attachment metadata.
+- Fixed: admin and user readers now open attachment files from the attachment list, and forwarded emails include the original attachments for all `To`/`CC` recipients.
+- Affected files: `backend/app/parser.py`, `backend/app/imap_sync.py`, `backend/app/db.py`, `backend/app/main.py`, `backend/app/mailer.py`, `app.js`, `user.js`, `style.css`, `user.css`.
+- Impact/Risk: medium; adds a SQLite table for attachment BLOBs and an on-demand IMAP fallback when old messages are opened or forwarded.
+
 ### 2026-05-04 00:00 - add_vps_migration_runbook
 - Added: `deploy/scripts/migrate_vps.sh` to install a fresh app checkout on a new VPS and copy runtime `.env` plus `deploy/data` from a source VPS.
 - Added: `deploy/MIGRATION.md` with the operator runbook and post-migration checks.

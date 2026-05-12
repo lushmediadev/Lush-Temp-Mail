@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,13 +17,14 @@ from . import db
 from .auth import clear_session, create_session, require_admin, require_session, require_user
 from .config import settings
 from .events import inbox_events
-from .imap_sync import MailSyncService
+from .imap_sync import MailSyncService, fetch_message_attachment_payloads
 from .mailer import send_composed_message
 from .translator import DEFAULT_TARGET_LANGUAGE, translate_message
 from .utils import iso_in_hours, is_valid_local_part, normalize_lookup_address, random_local_part
 
 
 mail_sync = MailSyncService()
+logger = logging.getLogger("lush_temp_mail.api")
 
 
 def _expires_at_from_hours(hours: int | None) -> str | None:
@@ -53,6 +56,58 @@ def _clean_password(value: Any, *, required: bool) -> str | None:
             raise HTTPException(status_code=400, detail="Mật khẩu là bắt buộc")
         return None
     return password
+
+
+def _resolve_message_attachment(message: dict[str, Any], attachment_index: int) -> dict[str, Any] | None:
+    attachment = db.get_message_attachment(message["id"], attachment_index)
+    if attachment is not None:
+        return attachment
+
+    try:
+        fetched_attachments = fetch_message_attachment_payloads(message)
+    except Exception as error:
+        logger.warning("Failed to fetch attachment payloads for message %s: %s", message.get("id"), error)
+        fetched_attachments = []
+
+    if fetched_attachments:
+        db.cache_message_attachment_payloads(message["id"], fetched_attachments)
+        attachment = db.get_message_attachment(message["id"], attachment_index)
+        if attachment is not None:
+            return attachment
+
+    return None
+
+
+def _resolve_message_attachments(message: dict[str, Any]) -> list[dict[str, Any]]:
+    attachments = db.list_message_attachment_payloads(message["id"])
+    if attachments:
+        return attachments
+
+    try:
+        fetched_attachments = fetch_message_attachment_payloads(message)
+    except Exception as error:
+        logger.warning("Failed to fetch attachment payloads for message %s: %s", message.get("id"), error)
+        return []
+
+    if not fetched_attachments:
+        return []
+    db.cache_message_attachment_payloads(message["id"], fetched_attachments)
+    return db.list_message_attachment_payloads(message["id"])
+
+
+def _attachment_response(attachment: dict[str, Any]) -> Response:
+    filename = str(attachment.get("filename") or "attachment")
+    content_type = str(attachment.get("content_type") or "application/octet-stream")
+    disposition = "inline" if content_type == "application/pdf" else "attachment"
+    encoded_filename = quote(filename)
+    return Response(
+        content=attachment.get("content") or b"",
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"{disposition}; filename*=UTF-8''{encoded_filename}",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @asynccontextmanager
@@ -334,6 +389,21 @@ def get_message(message_id: int, _session=Depends(require_admin)) -> dict[str, A
     return {"item": db.get_message(message_id)}
 
 
+@app.get("/api/messages/{message_id}/attachments/{attachment_index}")
+def download_message_attachment(
+    message_id: int,
+    attachment_index: int,
+    _session=Depends(require_admin),
+) -> Response:
+    message = db.get_message(message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại")
+    attachment = _resolve_message_attachment(message, attachment_index)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu tệp đính kèm")
+    return _attachment_response(attachment)
+
+
 @app.delete("/api/messages/{message_id}")
 def delete_message(message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
     message = db.delete_message(message_id)
@@ -372,15 +442,18 @@ def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=
     message = db.get_message(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Email không tồn tại")
+    mode = (payload.get("mode") or "reply").strip().lower()
+    attachments = _resolve_message_attachments(message) if mode == "forward" else []
 
     try:
         result = send_composed_message(
             source_message=message,
-            mode=(payload.get("mode") or "reply").strip().lower(),
+            mode=mode,
             to_value=payload.get("to", ""),
             cc_value=payload.get("cc", ""),
             subject=payload.get("subject", ""),
             body=payload.get("body", ""),
+            attachments=attachments,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -442,6 +515,27 @@ def public_get_message(message_id: int, alias: str = Query(...), _session=Depend
 
     db.mark_message_read(message_id)
     return {"ok": True, "item": db.get_message_for_address(message_id, address)}
+
+
+@app.get("/api/public/messages/{message_id}/attachments/{attachment_index}")
+def public_download_message_attachment(
+    message_id: int,
+    attachment_index: int,
+    alias: str = Query(...),
+    _session=Depends(require_user),
+) -> Response:
+    try:
+        address = normalize_lookup_address(alias, settings.mail_domain)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+    message = db.get_message_for_address(message_id, address)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email không tồn tại cho alias này")
+    attachment = _resolve_message_attachment(message, attachment_index)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu tệp đính kèm")
+    return _attachment_response(attachment)
 
 
 @app.post("/api/public/messages/{message_id}/translate")

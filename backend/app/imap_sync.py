@@ -15,6 +15,7 @@ from .events import inbox_events
 from .parser import (
     collect_headers,
     decode_mime_text,
+    extract_attachment_payloads,
     extract_attachments,
     extract_links,
     extract_otps,
@@ -29,6 +30,25 @@ from .utils import iso_days_ago, utc_now_iso
 
 
 logger = logging.getLogger("lush_temp_mail.sync")
+
+
+def fetch_message_attachment_payloads(source_message: dict) -> list[dict]:
+    if not settings.imap_password:
+        return []
+
+    imap_uid = source_message.get("imap_uid")
+    if not imap_uid:
+        return []
+
+    with imaplib.IMAP4_SSL(settings.imap_host, settings.imap_port) as client:
+        client.login(settings.imap_username, settings.imap_password)
+        client.select("INBOX")
+        status, fetched = client.uid("fetch", str(imap_uid), "(RFC822)")
+        if status != "OK" or not fetched or not fetched[0]:
+            return []
+        raw_message = fetched[0][1]
+        message = message_from_bytes(raw_message)
+        return extract_attachment_payloads(message)
 
 
 class IdleUnavailableError(RuntimeError):
@@ -269,6 +289,7 @@ class MailSyncService:
             "text_body": text_body,
             "html_body": html_body,
             "attachments": extract_attachments(message),
+            "attachment_payloads": extract_attachment_payloads(message),
             "extracted_links": extract_links(text_body, html_body),
             "extracted_otps": extract_otps(text_body, html_body),
             "raw_headers": collect_headers(message),

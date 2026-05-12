@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import copy
 import re
 from email.header import decode_header
 from email.message import Message
@@ -151,9 +152,8 @@ def extract_text_parts(message: Message) -> tuple[str, str]:
     return text_body.strip(), html_body.strip()
 
 
-def extract_attachments(message: Message) -> list[dict[str, Any]]:
+def _iter_attachment_payloads(message: Message) -> list[dict[str, Any]]:
     attachments: list[dict[str, Any]] = []
-
     for part in message.walk():
         if part.is_multipart():
             continue
@@ -168,16 +168,33 @@ def extract_attachments(message: Message) -> list[dict[str, Any]]:
             continue
 
         payload = part.get_payload(decode=True) or b""
+        index = len(attachments)
         attachments.append(
             {
+                "index": index,
                 "filename": filename or "Unnamed attachment",
                 "content_type": content_type,
                 "size_bytes": len(payload),
                 "disposition": disposition or "attachment",
+                "content": payload,
             }
         )
 
     return attachments
+
+
+def strip_attachment_content(attachment: dict[str, Any]) -> dict[str, Any]:
+    metadata = copy.copy(attachment)
+    metadata.pop("content", None)
+    return metadata
+
+
+def extract_attachment_payloads(message: Message) -> list[dict[str, Any]]:
+    return _iter_attachment_payloads(message)
+
+
+def extract_attachments(message: Message) -> list[dict[str, Any]]:
+    return [strip_attachment_content(attachment) for attachment in _iter_attachment_payloads(message)]
 
 
 def extract_recipient(message: Message, domain: str, central_mailbox: str) -> str | None:

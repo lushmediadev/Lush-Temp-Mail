@@ -25,6 +25,7 @@ def send_composed_message(
     cc_value: str,
     subject: str,
     body: str,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     to_addresses = parse_address_list(to_value)
     cc_addresses = parse_address_list(cc_value)
@@ -55,6 +56,22 @@ def send_composed_message(
         message["References"] = original_message_id
 
     message.set_content(body)
+    outgoing_attachments = attachments or []
+    for attachment in outgoing_attachments:
+        content = attachment.get("content")
+        if content is None:
+            continue
+        content_type = str(attachment.get("content_type") or "application/octet-stream")
+        if "/" in content_type:
+            maintype, subtype = content_type.split("/", 1)
+        else:
+            maintype, subtype = "application", "octet-stream"
+        message.add_attachment(
+            bytes(content),
+            maintype=maintype,
+            subtype=subtype,
+            filename=str(attachment.get("filename") or "attachment"),
+        )
 
     if settings.smtp_security == "ssl":
         client = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=20)
@@ -82,4 +99,5 @@ def send_composed_message(
         "subject": subject.strip(),
         "from": settings.smtp_from_address,
         "message_id": message["Message-Id"],
+        "attachment_count": len(outgoing_attachments),
     }

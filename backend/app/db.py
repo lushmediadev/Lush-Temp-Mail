@@ -107,6 +107,23 @@ def init_db() -> None:
             conn.execute("ALTER TABLE messages ADD COLUMN ingested_at TEXT")
         if "attachments_json" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN attachments_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                attachment_index INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                disposition TEXT NOT NULL DEFAULT 'attachment',
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                content BLOB NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(message_id, attachment_index),
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )
+            """
+        )
         conn.execute("UPDATE messages SET mailbox_received_at = COALESCE(mailbox_received_at, received_at) WHERE mailbox_received_at IS NULL")
         conn.execute("UPDATE messages SET ingested_at = COALESCE(ingested_at, received_at) WHERE ingested_at IS NULL")
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -317,6 +334,55 @@ def row_to_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "has_links": bool(row["has_links"]),
         "has_otps": bool(row["has_otps"]),
     }
+
+
+def row_to_attachment(row: sqlite3.Row | None, *, include_content: bool = False) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    payload = {
+        "index": row["attachment_index"],
+        "filename": row["filename"],
+        "content_type": row["content_type"],
+        "disposition": row["disposition"],
+        "size_bytes": row["size_bytes"],
+    }
+    if include_content:
+        payload["content"] = bytes(row["content"])
+    return payload
+
+
+def _store_attachment_payloads(
+    conn: sqlite3.Connection,
+    message_id: int,
+    attachments: list[dict[str, Any]],
+) -> None:
+    if not attachments:
+        return
+    now = utc_now_iso()
+    for fallback_index, attachment in enumerate(attachments):
+        content = attachment.get("content")
+        if content is None:
+            continue
+        content_bytes = bytes(content)
+        attachment_index = int(attachment.get("index", fallback_index))
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO message_attachments(
+                message_id, attachment_index, filename, content_type, disposition, size_bytes, content, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                message_id,
+                attachment_index,
+                attachment.get("filename") or "Unnamed attachment",
+                attachment.get("content_type") or "application/octet-stream",
+                attachment.get("disposition") or "attachment",
+                int(attachment.get("size_bytes") or len(content_bytes)),
+                content_bytes,
+                now,
+            ),
+        )
 
 
 def hash_password(password: str) -> str:
@@ -688,8 +754,10 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     if alias["status"] != "active":
         return None
 
+    attachment_payloads = payload.get("attachment_payloads", [])
+
     with _connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT OR IGNORE INTO messages(
                 imap_mailbox, imap_uid, message_id, alias_id, recipient_address, from_name, from_email, subject,
@@ -724,6 +792,8 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
             "SELECT * FROM messages WHERE imap_mailbox = ? AND imap_uid = ?",
             (imap_mailbox, payload["imap_uid"]),
         ).fetchone()
+        if row is not None and cursor.rowcount > 0:
+            _store_attachment_payloads(conn, row["id"], attachment_payloads)
     return row_to_message(row)
 
 
@@ -871,6 +941,38 @@ def get_message(message_id: int) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
     return row_to_message(row)
+
+
+def get_message_attachment(message_id: int, attachment_index: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM message_attachments
+            WHERE message_id = ? AND attachment_index = ?
+            """,
+            (message_id, attachment_index),
+        ).fetchone()
+    return row_to_attachment(row, include_content=True)
+
+
+def list_message_attachment_payloads(message_id: int) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM message_attachments
+            WHERE message_id = ?
+            ORDER BY attachment_index ASC
+            """,
+            (message_id,),
+        ).fetchall()
+    return [row_to_attachment(row, include_content=True) for row in rows]
+
+
+def cache_message_attachment_payloads(message_id: int, attachments: list[dict[str, Any]]) -> None:
+    with _connect() as conn:
+        _store_attachment_payloads(conn, message_id, attachments)
 
 
 def get_message_for_address(message_id: int, recipient_address: str) -> dict[str, Any] | None:

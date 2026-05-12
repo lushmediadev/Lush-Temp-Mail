@@ -1,6 +1,7 @@
 from email import message_from_string
 
 from backend.app.parser import (
+    extract_attachment_payloads,
     extract_attachments,
     extract_links,
     extract_otps,
@@ -73,6 +74,11 @@ def test_extract_attachments_returns_attachment_metadata():
     assert len(attachments) == 1
     assert attachments[0]["filename"] == "invoice.pdf"
     assert attachments[0]["content_type"] == "application/pdf"
+    assert "content" not in attachments[0]
+
+    payloads = extract_attachment_payloads(message)
+    assert payloads[0]["index"] == 0
+    assert payloads[0]["content"] == b"%PDF-1.4"
 
 
 def test_extract_otps_rejects_lowercase_false_positive_from_generic_code_context():

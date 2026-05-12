@@ -313,6 +313,15 @@ body {
   border-bottom: 1px solid #e5e7eb;
   background: #ffffff;
   padding: 14px 0;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.detail-attachment-item:hover {
+  background: #fffaf8;
+  color: #cc3f18;
 }
 
 .detail-attachment-icon {
@@ -351,6 +360,16 @@ body {
   line-height: 1.5;
   color: #64748b;
   word-break: break-word;
+}
+
+.detail-attachment-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: #cc3f18;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .detail-divider {

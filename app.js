@@ -1152,6 +1152,10 @@ function renderComposePanel(message) {
   if (!draft || draft.messageId !== message.id) {
     return '';
   }
+  const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
+  const forwardAttachmentNote = draft.mode === 'forward' && attachmentCount
+    ? `<p class="detail-compose-note">${attachmentCount} tệp đính kèm sẽ được gửi cùng email chuyển tiếp.</p>`
+    : '';
 
   return `
     <section class="detail-flat-section detail-compose-section">
@@ -1182,6 +1186,7 @@ function renderComposePanel(message) {
         </label>
       </div>
       <div class="detail-compose-footer">
+        ${forwardAttachmentNote}
         <button type="button" data-compose-send="true" class="detail-send-btn ${draft.mode === 'reply' ? 'detail-send-btn-reply' : 'detail-send-btn-forward'}">
           ${draft.mode === 'reply' ? 'Gửi trả lời' : 'Gửi chuyển tiếp'}
         </button>
@@ -1464,17 +1469,25 @@ function renderAttachmentSection(message) {
     return '';
   }
 
-  const items = attachments.map((attachment) => `
-    <div class="detail-attachment-item">
+  const items = attachments.map((attachment, index) => {
+    const attachmentIndex = Number.isFinite(Number(attachment.index)) ? Number(attachment.index) : index;
+    const href = `/api/messages/${message.id}/attachments/${attachmentIndex}`;
+    return `
+    <a class="detail-attachment-item" href="${escapeAttribute(href)}" target="_blank" rel="noreferrer" title="Mở tệp đính kèm">
       <div class="detail-attachment-icon">
         <i data-lucide="paperclip" class="w-4 h-4"></i>
       </div>
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <p class="detail-attachment-name">${escapeHtml(attachment.filename || 'Unnamed attachment')}</p>
         <p class="detail-attachment-meta">${escapeHtml(attachment.content_type || 'application/octet-stream')} • ${formatFileSize(attachment.size_bytes || 0)}</p>
       </div>
-    </div>
-  `).join('');
+      <span class="detail-attachment-action">
+        <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+        Mở
+      </span>
+    </a>
+  `;
+  }).join('');
 
   return `
     <section class="detail-flat-section">

@@ -362,6 +362,15 @@ body { overflow: hidden; }
   border-bottom: 1px solid #eceff3;
   background: #ffffff;
   padding: 14px 0;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.detail-attachment-item:hover {
+  background: #fffaf8;
+  color: #cc3f18;
 }
 
 .detail-attachment-icon {
@@ -391,6 +400,16 @@ body { overflow: hidden; }
   line-height: 1.5;
   color: #64748b;
   word-break: break-word;
+}
+
+.detail-attachment-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  color: #cc3f18;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .detail-compose-section {
@@ -450,6 +469,13 @@ body { overflow: hidden; }
   align-items: center;
   justify-content: space-between;
   gap: 14px;
+}
+
+.detail-compose-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .detail-send-btn {
