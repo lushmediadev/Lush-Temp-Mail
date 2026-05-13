@@ -90,11 +90,30 @@ def init_db() -> None:
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS sent_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_message_id INTEGER,
+                mode TEXT NOT NULL,
+                from_email TEXT NOT NULL,
+                to_json TEXT NOT NULL DEFAULT '[]',
+                cc_json TEXT NOT NULL DEFAULT '[]',
+                subject TEXT NOT NULL,
+                text_body TEXT NOT NULL,
+                attachments_json TEXT NOT NULL DEFAULT '[]',
+                message_id TEXT,
+                sent_at TEXT NOT NULL,
+                suppressed INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(source_message_id) REFERENCES messages(id) ON DELETE SET NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_recipient_received_at
             ON messages(recipient_address, received_at DESC);
 
             CREATE INDEX IF NOT EXISTS idx_messages_alias_received_at
             ON messages(alias_id, received_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_sent_messages_sent_at
+            ON sent_messages(sent_at DESC);
             """
         )
         _ensure_message_mailbox_namespace(conn)
@@ -121,6 +140,23 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 UNIQUE(message_id, attachment_index),
                 FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sent_message_attachments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                sent_message_id INTEGER NOT NULL,
+                attachment_index INTEGER NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT NOT NULL,
+                disposition TEXT NOT NULL DEFAULT 'attachment',
+                size_bytes INTEGER NOT NULL DEFAULT 0,
+                content BLOB NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(sent_message_id, attachment_index),
+                FOREIGN KEY(sent_message_id) REFERENCES sent_messages(id) ON DELETE CASCADE
             )
             """
         )
@@ -351,6 +387,44 @@ def row_to_attachment(row: sqlite3.Row | None, *, include_content: bool = False)
     return payload
 
 
+def row_to_sent_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    subject = decode_mime_text(row["subject"] or "")
+    text_body = row["text_body"] or ""
+    return {
+        "id": row["id"],
+        "kind": "sent",
+        "source_message_id": row["source_message_id"],
+        "mode": row["mode"],
+        "from_email": row["from_email"],
+        "to": json.loads(row["to_json"] or "[]"),
+        "cc": json.loads(row["cc_json"] or "[]"),
+        "subject": subject,
+        "snippet": text_body[:240],
+        "text_body": text_body,
+        "html_body": "",
+        "attachments": json.loads(row["attachments_json"] or "[]"),
+        "message_id": row["message_id"],
+        "sent_at": row["sent_at"],
+        "received_at": row["sent_at"],
+        "unread": False,
+        "important": False,
+        "suppressed": bool(row["suppressed"]),
+        "can_translate": False,
+    }
+
+
+def _attachment_metadata(attachment: dict[str, Any], fallback_index: int) -> dict[str, Any]:
+    return {
+        "index": int(attachment.get("index", fallback_index)),
+        "filename": attachment.get("filename") or "Unnamed attachment",
+        "content_type": attachment.get("content_type") or "application/octet-stream",
+        "disposition": attachment.get("disposition") or "attachment",
+        "size_bytes": int(attachment.get("size_bytes") or len(bytes(attachment.get("content") or b""))),
+    }
+
+
 def _store_attachment_payloads(
     conn: sqlite3.Connection,
     message_id: int,
@@ -379,6 +453,40 @@ def _store_attachment_payloads(
                 attachment.get("content_type") or "application/octet-stream",
                 attachment.get("disposition") or "attachment",
                 int(attachment.get("size_bytes") or len(content_bytes)),
+                content_bytes,
+                now,
+            ),
+        )
+
+
+def _store_sent_attachment_payloads(
+    conn: sqlite3.Connection,
+    sent_message_id: int,
+    attachments: list[dict[str, Any]],
+) -> None:
+    if not attachments:
+        return
+    now = utc_now_iso()
+    for fallback_index, attachment in enumerate(attachments):
+        content = attachment.get("content")
+        if content is None:
+            continue
+        content_bytes = bytes(content)
+        metadata = _attachment_metadata(attachment, fallback_index)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO sent_message_attachments(
+                sent_message_id, attachment_index, filename, content_type, disposition, size_bytes, content, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sent_message_id,
+                metadata["index"],
+                metadata["filename"],
+                metadata["content_type"],
+                metadata["disposition"],
+                metadata["size_bytes"],
                 content_bytes,
                 now,
             ),
@@ -867,6 +975,82 @@ def delete_messages_by_scope(*, alias_id: int | None = None, filter_name: str = 
     return {"deleted_count": len(message_ids), "recipient_addresses": recipient_addresses}
 
 
+def _build_sent_message_scope(*, search: str = "") -> tuple[str, list[Any]]:
+    query = """
+        FROM sent_messages
+        WHERE suppressed = 0
+    """
+    values: list[Any] = []
+    if search:
+        pattern = f"%{search.lower()}%"
+        query += """
+            AND (
+                LOWER(COALESCE(from_email, '')) LIKE ?
+                OR LOWER(COALESCE(to_json, '')) LIKE ?
+                OR LOWER(COALESCE(cc_json, '')) LIKE ?
+                OR LOWER(COALESCE(subject, '')) LIKE ?
+                OR LOWER(COALESCE(text_body, '')) LIKE ?
+                OR LOWER(COALESCE(attachments_json, '')) LIKE ?
+            )
+        """
+        values.extend([pattern, pattern, pattern, pattern, pattern, pattern])
+    return query, values
+
+
+def store_sent_message(payload: dict[str, Any]) -> dict[str, Any] | None:
+    attachments = payload.get("attachments") or []
+    attachment_metadata = [_attachment_metadata(attachment, index) for index, attachment in enumerate(attachments)]
+    sent_at = payload.get("sent_at") or utc_now_iso()
+    with _connect() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO sent_messages(
+                source_message_id, mode, from_email, to_json, cc_json, subject, text_body,
+                attachments_json, message_id, sent_at, suppressed
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                payload.get("source_message_id"),
+                payload.get("mode") or "reply",
+                payload.get("from_email") or settings.smtp_from_address,
+                json.dumps(payload.get("to") or [], ensure_ascii=False),
+                json.dumps(payload.get("cc") or [], ensure_ascii=False),
+                payload.get("subject") or "",
+                payload.get("body") or "",
+                json.dumps(attachment_metadata, ensure_ascii=False),
+                payload.get("message_id") or "",
+                sent_at,
+            ),
+        )
+        sent_message_id = cursor.lastrowid
+        _store_sent_attachment_payloads(conn, sent_message_id, attachments)
+        row = conn.execute("SELECT * FROM sent_messages WHERE id = ?", (sent_message_id,)).fetchone()
+    return row_to_sent_message(row)
+
+
+def list_sent_messages(*, search: str = "", limit: int = 200) -> list[dict[str, Any]]:
+    scope_query, values = _build_sent_message_scope(search=search)
+    query = f"SELECT * {scope_query} ORDER BY sent_at DESC LIMIT ?"
+    values.append(limit)
+    with _connect() as conn:
+        rows = conn.execute(query, values).fetchall()
+    return [row_to_sent_message(row) for row in rows]
+
+
+def delete_sent_messages_by_scope(*, search: str = "") -> dict[str, Any]:
+    scope_query, values = _build_sent_message_scope(search=search)
+    query = f"SELECT id {scope_query}"
+    with _connect() as conn:
+        rows = conn.execute(query, values).fetchall()
+        if not rows:
+            return {"deleted_count": 0}
+        sent_message_ids = [row["id"] for row in rows]
+        placeholders = ", ".join("?" for _ in sent_message_ids)
+        conn.execute(f"UPDATE sent_messages SET suppressed = 1 WHERE id IN ({placeholders})", sent_message_ids)
+    return {"deleted_count": len(sent_message_ids)}
+
+
 def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
     with _connect() as conn:
         rows = conn.execute(
@@ -943,6 +1127,15 @@ def get_message(message_id: int) -> dict[str, Any] | None:
     return row_to_message(row)
 
 
+def get_sent_message(sent_message_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM sent_messages WHERE id = ? AND suppressed = 0",
+            (sent_message_id,),
+        ).fetchone()
+    return row_to_sent_message(row)
+
+
 def get_message_attachment(message_id: int, attachment_index: int) -> dict[str, Any] | None:
     with _connect() as conn:
         row = conn.execute(
@@ -952,6 +1145,19 @@ def get_message_attachment(message_id: int, attachment_index: int) -> dict[str, 
             WHERE message_id = ? AND attachment_index = ?
             """,
             (message_id, attachment_index),
+        ).fetchone()
+    return row_to_attachment(row, include_content=True)
+
+
+def get_sent_message_attachment(sent_message_id: int, attachment_index: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT *
+            FROM sent_message_attachments
+            WHERE sent_message_id = ? AND attachment_index = ?
+            """,
+            (sent_message_id, attachment_index),
         ).fetchone()
     return row_to_attachment(row, include_content=True)
 
@@ -997,6 +1203,19 @@ def mark_message_read(message_id: int) -> dict[str, Any] | None:
         conn.execute("UPDATE messages SET unread = 0 WHERE id = ?", (message_id,))
         row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
     return row_to_message(row)
+
+
+def delete_sent_message(sent_message_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        existing = conn.execute(
+            "SELECT * FROM sent_messages WHERE id = ? AND suppressed = 0",
+            (sent_message_id,),
+        ).fetchone()
+        if existing is None:
+            return None
+        conn.execute("UPDATE sent_messages SET suppressed = 1 WHERE id = ?", (sent_message_id,))
+        row = conn.execute("SELECT * FROM sent_messages WHERE id = ?", (sent_message_id,)).fetchone()
+    return row_to_sent_message(row)
 
 
 def set_message_important(message_id: int, important: bool) -> dict[str, Any] | None:

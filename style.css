@@ -326,6 +326,22 @@ body { overflow: hidden; }
   font-weight: 600;
 }
 
+.detail-address-grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 22px;
+  padding: 18px 0 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.detail-address-grid p:last-child {
+  margin-top: 6px;
+  color: #334155;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
 .detail-body-copy {
   color: #374151;
   font-size: 15px;
@@ -727,6 +743,20 @@ body { overflow: hidden; }
   background: linear-gradient(135deg, #ff5528 0%, #ff784f 100%);
   color: #fff;
   box-shadow: 0 8px 20px -12px rgba(255, 85, 40, 0.9);
+}
+
+.mail-badge-sent {
+  gap: 5px;
+  background: #fff7f5;
+  color: #cc3f18;
+  border: 1px solid #ffd9cc;
+}
+
+.mail-badge-neutral {
+  gap: 5px;
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e5e7eb;
 }
 
 .pagination-btn {

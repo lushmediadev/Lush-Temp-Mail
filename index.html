@@ -38,7 +38,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20260505-user-management">
+  <link rel="stylesheet" href="style.css?v=20260513-sent-mail">
 </head>
 <body class="font-inter antialiased bg-white text-gray-800 min-h-screen">
   <div id="loginPage" class="min-h-screen flex items-center justify-center relative overflow-hidden">
@@ -121,13 +121,9 @@
             <i data-lucide="star" class="w-4.5 h-4.5"></i>
             <span class="flex-1 text-left">Quan trọng</span>
           </button>
-          <button data-filter="otp" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
-            <i data-lucide="badge-check" class="w-4.5 h-4.5"></i>
-            <span class="flex-1 text-left">Có OTP</span>
-          </button>
-          <button data-filter="links" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
-            <i data-lucide="link" class="w-4.5 h-4.5"></i>
-            <span class="flex-1 text-left">Có link verify</span>
+          <button data-filter="sent" class="folder-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150">
+            <i data-lucide="send-horizontal" class="w-4.5 h-4.5"></i>
+            <span class="flex-1 text-left">Đã gửi</span>
           </button>
           <div class="pt-3 mt-3 border-t border-gray-100">
             <button id="usersTabBtn" type="button" class="folder-btn admin-tab-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150" data-admin-view="users">
@@ -277,6 +273,6 @@
     <span id="toastMsg">Done</span>
   </div>
 
-  <script src="app.js?v=20260505-user-management"></script>
+  <script src="app.js?v=20260513-sent-mail"></script>
 </body>
 </html>

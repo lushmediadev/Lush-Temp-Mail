@@ -1,5 +1,12 @@
 # Worklog
 
+## 2026-05-13 00:00 - Add admin sent mailbox
+
+- Re-read the project rules, memory index, and UI system, then kept the admin mailbox layout flat and consistent with the existing LushMail visual language.
+- Replaced the visible `Có OTP` / `Có link verify` sidebar shortcuts with `Đã gửi`, backed by new `sent_messages` and `sent_message_attachments` tables that are populated after reply/forward SMTP sends complete.
+- Added sent-list and sent-detail rendering in `app.js`: rows show `Đến: ...`, send mode, timestamp, and attachment count; details show From/To/CC/Message-ID, body, copy actions, and download links for stored sent attachments.
+- Verified with `node --check app.js`, `python -m py_compile backend/app/db.py backend/app/main.py backend/app/mailer.py`, and the full backend test suite.
+
 ## 2026-03-21 18:15 - Re-enable row checkbox without widening admin layout
 
 - Re-read project memory/rules and kept the existing compact admin header untouched, because the user only wanted checkbox selection restored inside the email rows, not another toolbar expansion.

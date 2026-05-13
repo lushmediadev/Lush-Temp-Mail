@@ -380,6 +380,23 @@ def delete_messages_in_scope(
     return {"ok": True, "deleted_count": result["deleted_count"]}
 
 
+@app.get("/api/sent-messages")
+def list_sent_messages(
+    search: str = Query(default=""),
+    _session=Depends(require_admin),
+) -> dict[str, Any]:
+    return {"items": db.list_sent_messages(search=search)}
+
+
+@app.delete("/api/sent-messages")
+def delete_sent_messages_in_scope(
+    search: str = Query(default=""),
+    _session=Depends(require_admin),
+) -> dict[str, Any]:
+    result = db.delete_sent_messages_by_scope(search=search)
+    return {"ok": True, "deleted_count": result["deleted_count"]}
+
+
 @app.get("/api/messages/{message_id}")
 def get_message(message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
     message = db.get_message(message_id)
@@ -387,6 +404,14 @@ def get_message(message_id: int, _session=Depends(require_admin)) -> dict[str, A
         raise HTTPException(status_code=404, detail="Email không tồn tại")
     db.mark_message_read(message_id)
     return {"item": db.get_message(message_id)}
+
+
+@app.get("/api/sent-messages/{sent_message_id}")
+def get_sent_message(sent_message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.get_sent_message(sent_message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email đã gửi không tồn tại")
+    return {"item": message}
 
 
 @app.get("/api/messages/{message_id}/attachments/{attachment_index}")
@@ -404,12 +429,35 @@ def download_message_attachment(
     return _attachment_response(attachment)
 
 
+@app.get("/api/sent-messages/{sent_message_id}/attachments/{attachment_index}")
+def download_sent_message_attachment(
+    sent_message_id: int,
+    attachment_index: int,
+    _session=Depends(require_admin),
+) -> Response:
+    message = db.get_sent_message(sent_message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email đã gửi không tồn tại")
+    attachment = db.get_sent_message_attachment(sent_message_id, attachment_index)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy dữ liệu tệp đính kèm")
+    return _attachment_response(attachment)
+
+
 @app.delete("/api/messages/{message_id}")
 def delete_message(message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
     message = db.delete_message(message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Email không tồn tại")
     inbox_events.publish([message["recipient_address"]])
+    return {"item": message}
+
+
+@app.delete("/api/sent-messages/{sent_message_id}")
+def delete_sent_message(sent_message_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
+    message = db.delete_sent_message(sent_message_id)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Email đã gửi không tồn tại")
     return {"item": message}
 
 
@@ -460,7 +508,21 @@ def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=
     except Exception as error:
         raise HTTPException(status_code=502, detail=f"Gửi mail thất bại: {error}") from error
 
-    return {"ok": True, "item": result}
+    sent_item = db.store_sent_message(
+        {
+            "source_message_id": message["id"],
+            "mode": result["mode"],
+            "from_email": result["from"],
+            "to": result["to"],
+            "cc": result["cc"],
+            "subject": result["subject"],
+            "body": payload.get("body", ""),
+            "attachments": attachments,
+            "message_id": result["message_id"],
+        }
+    )
+
+    return {"ok": True, "item": result, "sent_item": sent_item}
 
 
 @app.get("/api/public/inbox")

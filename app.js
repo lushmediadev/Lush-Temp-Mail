@@ -396,6 +396,12 @@ function setMailFilter(filterName) {
   }
   state.currentFilter = filterName;
   state.currentPage = 1;
+  state.selectedMessageId = null;
+  state.selectedMessageIds = [];
+  state.selectionAnchorMessageId = null;
+  state.selectedMessageCache = null;
+  state.composeDraft = null;
+  resetDetail();
   document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
     button.classList.toggle('active', button.dataset.filter === filterName);
   });
@@ -455,7 +461,8 @@ async function loadMessages(options = {}) {
   const previousSelectedMessageId = state.selectedMessageId;
   const params = getMessageQueryParams();
 
-  const payload = await api(`/api/messages?${params.toString()}`);
+  const endpoint = isSentFolder() ? '/api/sent-messages' : '/api/messages';
+  const payload = await api(`${endpoint}?${params.toString()}`);
   markRecentMessages(payload.items);
   state.messages = payload.items;
   state.selectedMessageIds = state.selectedMessageIds.filter((id) => state.messages.some((item) => item.id === id));
@@ -501,7 +508,9 @@ async function loadMessages(options = {}) {
 
 function getMessageQueryParams() {
   const params = new URLSearchParams();
-  params.set('filter_name', state.currentFilter);
+  if (!isSentFolder()) {
+    params.set('filter_name', state.currentFilter);
+  }
   if (state.mainSearch.trim()) {
     params.set('search', state.mainSearch.trim());
   }
@@ -534,6 +543,10 @@ function renderMessages() {
   dom.emptyState.classList.remove('flex');
 
   dom.emailList.innerHTML = visibleMessages.map((message) => {
+    if (isSentMessage(message)) {
+      return renderSentMessageRow(message);
+    }
+
     const selectedCls = isMessageSelected(message.id) ? 'selected' : '';
     const unreadCls = message.unread ? 'unread' : '';
     const recentCls = isRecentMessage(message.id) ? 'recent' : '';
@@ -620,6 +633,55 @@ function renderMessages() {
 
   lucide.createIcons();
   updateBulkToolbar();
+}
+
+function renderSentMessageRow(message) {
+  const selectedCls = isMessageSelected(message.id) ? 'selected' : '';
+  const recipients = formatAddressList(message.to, 'Không có người nhận');
+  const subject = escapeHtml(message.subject || '(No subject)');
+  const snippet = escapeHtml(message.snippet || message.text_body || '');
+  const avatar = getAvatarPresentation(message);
+  const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
+  const modeLabel = message.mode === 'forward' ? 'Forward' : 'Reply';
+  const attachmentBadge = attachmentCount
+    ? `<span class="mail-badge mail-badge-neutral"><i data-lucide="paperclip" class="w-3 h-3"></i>${attachmentCount} tệp</span>`
+    : '';
+
+  return `
+    <div class="email-row ${selectedCls} pr-4 pl-10 sm:pr-6 sm:pl-12 py-4 flex items-start gap-3" data-message-id="${message.id}" data-recent-message="false">
+      <label class="row-checkbox" aria-label="Chọn email đã gửi ${message.id}">
+        <input class="row-checkbox-input" type="checkbox" data-select-message="${message.id}" ${selectedCls ? 'checked' : ''}>
+        <span class="row-checkbox-box">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+        </span>
+      </label>
+      <div class="mail-avatar flex-shrink-0 mt-0.5" style="background:${avatar.background}; color:${avatar.color};">
+        ${avatar.label}
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-sm font-semibold text-gray-900 truncate">Đến: ${escapeHtml(recipients)}</p>
+            <p class="text-sm font-medium text-gray-500 truncate mt-0.5">Từ ${escapeHtml(message.from_email || 'LushMail')}</p>
+            <p class="text-sm text-gray-600 truncate mt-0.5">${subject}</p>
+            ${snippet ? `<p class="text-sm text-gray-400 truncate mt-0.5">${snippet}</p>` : ''}
+          </div>
+          <div class="flex flex-col items-end gap-2 flex-shrink-0">
+            <span class="text-xs text-gray-400 whitespace-nowrap" data-relative-time="${escapeAttribute(message.sent_at || message.received_at)}">${formatRelativeDate(message.sent_at || message.received_at)}</span>
+            <div class="row-actions">
+              <button class="row-action-btn row-delete-btn" type="button" title="Xóa email đã gửi" data-delete-message="${message.id}">
+                <i data-lucide="trash" class="w-4 h-4 pointer-events-none"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-3 flex-wrap">
+          <span class="mail-badge mail-badge-sent"><i data-lucide="send-horizontal" class="w-3 h-3"></i>${modeLabel}</span>
+          ${attachmentBadge}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 async function loadUsers() {
@@ -804,7 +866,11 @@ async function handleMessageRowClick(messageId, event) {
 async function openMessage(messageId, options = {}) {
   const { selectionIds = [messageId], anchorId = messageId } = options;
   try {
-    const payload = await api(`/api/messages/${messageId}`);
+    const rowMessage = state.messages.find((item) => item.id === messageId);
+    const endpoint = isSentMessage(rowMessage) || isSentFolder()
+      ? `/api/sent-messages/${messageId}`
+      : `/api/messages/${messageId}`;
+    const payload = await api(endpoint);
     state.selectedMessageId = messageId;
     state.selectedMessageIds = normalizeSelectedMessageIds(selectionIds);
     state.selectionAnchorMessageId = anchorId;
@@ -842,7 +908,8 @@ async function deleteMessages(messageIds) {
   }
 
   try {
-    await Promise.all(uniqueIds.map((messageId) => api(`/api/messages/${messageId}`, { method: 'DELETE' })));
+    const endpointPrefix = isSentFolder() ? '/api/sent-messages' : '/api/messages';
+    await Promise.all(uniqueIds.map((messageId) => api(`${endpointPrefix}/${messageId}`, { method: 'DELETE' })));
     uniqueIds.forEach((messageId) => {
       delete state.recentMessageIds[messageId];
       delete state.messageTranslations[messageId];
@@ -949,14 +1016,15 @@ async function deleteAllMessagesInScope() {
   }
 
   const confirmed = window.confirm(
-    `${getDeleteAllScopeLabel()}\nH\u00e0nh \u0111\u1ed9ng n\u00e0y s\u1ebd x\u00f3a to\u00e0n b\u1ed9 email kh\u1edbp inbox hi\u1ec7n t\u1ea1i, kh\u00f4ng ph\u1ee5 thu\u1ed9c page \u0111ang xem.`,
+    `${getDeleteAllScopeLabel()}\nH\u00e0nh \u0111\u1ed9ng n\u00e0y s\u1ebd x\u00f3a to\u00e0n b\u1ed9 email kh\u1edbp b\u1ed9 l\u1ecdc hi\u1ec7n t\u1ea1i, kh\u00f4ng ph\u1ee5 thu\u1ed9c page \u0111ang xem.`,
   );
   if (!confirmed) {
     return;
   }
 
   const params = getMessageQueryParams();
-  const payload = await api(`/api/messages?${params.toString()}`, { method: 'DELETE' });
+  const endpoint = isSentFolder() ? '/api/sent-messages' : '/api/messages';
+  const payload = await api(`${endpoint}?${params.toString()}`, { method: 'DELETE' });
   state.selectedMessageId = null;
   state.selectedMessageIds = [];
   state.selectionAnchorMessageId = null;
@@ -979,8 +1047,7 @@ function getDeleteAllScopeLabel() {
     all: 'X\u00f3a to\u00e0n b\u1ed9 email trong h\u1ed9p th\u01b0?',
     unread: 'X\u00f3a to\u00e0n b\u1ed9 email ch\u01b0a \u0111\u1ecdc?',
     important: 'X\u00f3a to\u00e0n b\u1ed9 email quan tr\u1ecdng?',
-    otp: 'X\u00f3a to\u00e0n b\u1ed9 email c\u00f3 OTP?',
-    links: 'X\u00f3a to\u00e0n b\u1ed9 email c\u00f3 link verify?',
+    sent: 'X\u00f3a to\u00e0n b\u1ed9 email \u0111\u00e3 g\u1eedi?',
   };
   return labels[state.currentFilter] || 'X\u00f3a to\u00e0n b\u1ed9 email trong inbox hi\u1ec7n t\u1ea1i?';
 }
@@ -1017,6 +1084,11 @@ async function toggleImportant(messageId) {
 }
 
 function renderDetail(message) {
+  if (isSentMessage(message)) {
+    renderSentDetail(message);
+    return;
+  }
+
   const avatar = getAvatarPresentation(message);
   const composePanel = renderComposePanel(message);
   const originalSubject = message.subject || '(No subject)';
@@ -1103,6 +1175,100 @@ function renderDetail(message) {
   lucide.createIcons();
   syncEmailFrameHeights();
 
+  bindDetailActions();
+}
+
+function renderSentDetail(message) {
+  const avatar = getAvatarPresentation(message);
+  const recipients = formatAddressList(message.to, 'Không có người nhận');
+  const ccRecipients = formatAddressList(message.cc, '');
+  const sentAt = message.sent_at || message.received_at;
+  const attachmentSection = renderAttachmentSection(message);
+  const detailHTML = `
+    <div class="detail-fade-in detail-pane-shell">
+      <div class="detail-scroll-area" data-detail-scroll>
+        <div class="detail-reader">
+          <section class="detail-flat-section detail-flat-hero">
+            <div class="flex items-start gap-4">
+              <div class="mail-avatar-detail flex-shrink-0" style="background:${avatar.background}; color:${avatar.color};">
+                ${avatar.label}
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="detail-kicker">Đã gửi tới</p>
+                <h4 class="font-fustat text-xl font-bold text-gray-900 break-all">${escapeHtml(recipients)}</h4>
+                <div class="detail-meta-stack mt-3">
+                  <p class="text-sm text-gray-700">Từ ${escapeHtml(message.from_email || 'LushMail')}</p>
+                  ${ccRecipients ? `<p class="text-sm text-gray-400 break-all">CC ${escapeHtml(ccRecipients)}</p>` : ''}
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-title-block">
+              <p class="detail-kicker">Tiêu đề</p>
+              <h3 class="font-fustat text-[30px] font-bold text-gray-900 leading-snug">${escapeHtml(message.subject || '(No subject)')}</h3>
+            </div>
+
+            <div class="detail-meta-row">
+              <div class="detail-meta-main">
+                <i data-lucide="send-horizontal" class="w-4 h-4 text-gray-400"></i>
+                <span class="text-sm text-gray-500">${formatFullDate(sentAt)}</span>
+              </div>
+              <span class="mail-badge mail-badge-sent">${message.mode === 'forward' ? 'Forward' : 'Reply'}</span>
+            </div>
+
+            <div class="detail-address-grid">
+              <div>
+                <p class="detail-kicker">Từ</p>
+                <p>${escapeHtml(message.from_email || '-')}</p>
+              </div>
+              <div>
+                <p class="detail-kicker">Tới</p>
+                <p>${escapeHtml(recipients)}</p>
+              </div>
+              ${ccRecipients ? `
+                <div>
+                  <p class="detail-kicker">CC</p>
+                  <p>${escapeHtml(ccRecipients)}</p>
+                </div>
+              ` : ''}
+              <div>
+                <p class="detail-kicker">Message-ID</p>
+                <p>${escapeHtml(message.message_id || '-')}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="detail-flat-section">
+            <div class="detail-section-heading">
+              <p class="detail-kicker">Nội dung đã gửi</p>
+            </div>
+            <div class="detail-body-copy">${linkifyText(message.text_body || 'Email này không có nội dung text.')}</div>
+          </section>
+
+          ${attachmentSection}
+        </div>
+      </div>
+
+      <div class="detail-sticky-footer">
+        <section class="detail-flat-toolbar detail-footer-shell">
+          <div class="flex flex-wrap items-center gap-3">
+            <button type="button" data-copy-text="${escapeAttribute(recipients)}" data-copy-success="Đã copy người nhận" class="detail-footer-action">
+              <i data-lucide="copy" class="w-4 h-4"></i>
+              Copy người nhận
+            </button>
+            <button type="button" data-copy-text="${escapeAttribute(message.subject || '')}" data-copy-success="Đã copy tiêu đề" class="detail-footer-action">
+              <i data-lucide="copy-check" class="w-4 h-4"></i>
+              Copy tiêu đề
+            </button>
+          </div>
+        </section>
+      </div>
+    </div>
+  `;
+
+  dom.detailContent.innerHTML = detailHTML;
+  dom.mobileDetailContent.innerHTML = detailHTML;
+  lucide.createIcons();
   bindDetailActions();
 }
 
@@ -1219,6 +1385,9 @@ function renderDetailActionBar(message) {
 function bindDetailActions() {
   document.querySelectorAll('[data-copy-code]').forEach((button) => {
     button.addEventListener('click', () => copyText(button.dataset.copyCode, 'Đã copy OTP'));
+  });
+  document.querySelectorAll('[data-copy-text]').forEach((button) => {
+    button.addEventListener('click', () => copyText(button.dataset.copyText || '', button.dataset.copySuccess || 'Đã copy'));
   });
   document.querySelectorAll('[data-translate-message]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -1471,7 +1640,9 @@ function renderAttachmentSection(message) {
 
   const items = attachments.map((attachment, index) => {
     const attachmentIndex = Number.isFinite(Number(attachment.index)) ? Number(attachment.index) : index;
-    const href = `/api/messages/${message.id}/attachments/${attachmentIndex}`;
+    const href = isSentMessage(message)
+      ? `/api/sent-messages/${message.id}/attachments/${attachmentIndex}`
+      : `/api/messages/${message.id}/attachments/${attachmentIndex}`;
     return `
     <a class="detail-attachment-item" href="${escapeAttribute(href)}" target="_blank" rel="noreferrer" title="Mở tệp đính kèm">
       <div class="detail-attachment-icon">
@@ -1526,11 +1697,20 @@ function updateHeader() {
     all: 'Tất cả email',
     unread: 'Email chưa đọc',
     important: 'Email quan trọng',
-    otp: 'Email có OTP',
-    links: 'Email có link verify',
+    sent: 'Đã gửi',
   };
   dom.folderTitle.textContent = titles[state.currentFilter] || 'Mail feed';
   dom.folderCount.textContent = `${state.messages.length} email`;
+  if (dom.mainSearch) {
+    dom.mainSearch.placeholder = isSentFolder()
+      ? 'Tìm theo người nhận, subject, nội dung...'
+      : 'Tìm theo alias, sender, subject...';
+  }
+  if (dom.deleteAllBtn) {
+    dom.deleteAllBtn.title = isSentFolder()
+      ? 'Xóa tất cả email đã gửi đang lọc'
+      : 'Xóa tất cả email trong inbox hiện tại';
+  }
   if (dom.deleteAllBtn) {
     dom.deleteAllBtn.disabled = !state.messages.length;
   }
@@ -1692,9 +1872,26 @@ function buildPageNumbers(totalPages, currentPage) {
   return [1, 'ellipsis', currentPage - 1, currentPage, currentPage + 1, 'ellipsis', totalPages];
 }
 
+function isSentFolder() {
+  return state.currentFilter === 'sent';
+}
+
+function isSentMessage(message) {
+  return Boolean(message && message.kind === 'sent');
+}
+
+function formatAddressList(addresses, fallback = '-') {
+  const values = Array.isArray(addresses) ? addresses : [];
+  const normalized = values.map((item) => String(item || '').trim()).filter(Boolean);
+  return normalized.length ? normalized.join(', ') : fallback;
+}
+
 function getAvatarPresentation(message) {
-  const aliasLocalPart = getAliasLocalPart(message.recipient_address);
-  const seed = `${message.recipient_address || ''}|${message.from_email || ''}|${message.from_name || ''}`;
+  const primaryAddress = isSentMessage(message)
+    ? formatAddressList(message.to, message.from_email || '')
+    : message.recipient_address;
+  const aliasLocalPart = getAliasLocalPart(primaryAddress);
+  const seed = `${primaryAddress || ''}|${message.from_email || ''}|${message.from_name || ''}|${message.kind || 'inbox'}`;
   const palette = AVATAR_PALETTES[Math.abs(hashCode(seed)) % AVATAR_PALETTES.length];
   return {
     background: palette.background,
@@ -1836,7 +2033,10 @@ function buildMessageListSignature(messages) {
     message.from_name || '',
     message.from_email || '',
     message.subject || '',
-    message.received_at || '',
+    message.received_at || message.sent_at || '',
+    message.kind || 'inbox',
+    formatAddressList(message.to, ''),
+    formatAddressList(message.cc, ''),
     (message.extracted_otps || []).length,
     (message.extracted_links || []).length,
   ].join('|')).join('~');

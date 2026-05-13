@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-05-13 00:00 - add_admin_sent_mailbox
+- Added: admin `Đã gửi` mailbox replacing the old sidebar OTP/link quick filters, with sent rows showing recipients, mode, timestamp, and attachment count.
+- Added: persisted `sent_messages` and `sent_message_attachments` storage so reply/forward sends can be searched, opened, deleted, and downloaded from the sent folder.
+- Changed: admin detail reader now renders a sent-mail detail view with From/To/CC/Message-ID metadata, copy actions, body, and downloadable attachments.
+- Affected files: `backend/app/db.py`, `backend/app/main.py`, `index.html`, `app.js`, `style.css`, `backend/tests/test_sent_messages.py`.
+- Impact/Risk: medium; adds SQLite tables and routes for sent mail while leaving inbound IMAP parsing unchanged.
+
 ### 2026-05-12 00:00 - attachment_download_and_forward_payloads
 - Added: persisted inbound attachment payloads in `message_attachments`, with IMAP fallback fetch for older rows that only had attachment metadata.
 - Fixed: admin and user readers now open attachment files from the attachment list, and forwarded emails include the original attachments for all `To`/`CC` recipients.
