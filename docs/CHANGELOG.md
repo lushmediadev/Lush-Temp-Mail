@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-07-20 00:00 - fix_reader_splitter_drag_snap
+- Fixed: admin reader splitter no longer jumps when pressing the resize icon; dragging now uses pointer delta from the current panel width.
+- Affected files: `index.html`, `app.js`.
+- Impact/Risk: low; desktop-only splitter interaction.
+
 ### 2026-07-20 00:00 - align_admin_reader_splitter
 - Fixed: admin inbox reader now sits directly beside the message list; the shared panel edge acts as the resize hover handle without leaving an empty gutter.
 - Affected files: `index.html`, `style.css`.

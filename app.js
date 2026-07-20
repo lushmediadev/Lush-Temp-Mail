@@ -31,6 +31,8 @@ let adminEventsSource = null;
 let adminEventReconnectTimer = null;
 let adminEventVersion = 0;
 let detailResizeActive = false;
+let detailResizeStartX = 0;
+let detailResizeStartWidth = 0;
 
 const AUTO_VIEW_REFRESH_MS = 15000;
 const RELATIVE_TIME_REFRESH_MS = 10000;
@@ -437,12 +439,13 @@ function onDetailResizePointerDown(event) {
   }
   event.preventDefault();
   detailResizeActive = true;
+  detailResizeStartX = event.clientX;
+  detailResizeStartWidth = dom.emailDetail?.getBoundingClientRect().width || state.detailPaneWidth || DETAIL_DEFAULT_WIDTH;
   document.body.classList.add('detail-resizing');
   dom.detailResizeHandle.setPointerCapture?.(event.pointerId);
   document.addEventListener('pointermove', onDetailResizePointerMove);
   document.addEventListener('pointerup', onDetailResizePointerUp, { once: true });
   document.addEventListener('pointercancel', onDetailResizePointerUp, { once: true });
-  applyDetailPaneWidth(window.innerWidth - event.clientX);
 }
 
 function onDetailResizePointerMove(event) {
@@ -450,11 +453,13 @@ function onDetailResizePointerMove(event) {
     return;
   }
   event.preventDefault();
-  applyDetailPaneWidth(window.innerWidth - event.clientX);
+  applyDetailPaneWidth(detailResizeStartWidth + detailResizeStartX - event.clientX);
 }
 
 function onDetailResizePointerUp() {
   detailResizeActive = false;
+  detailResizeStartX = 0;
+  detailResizeStartWidth = 0;
   document.body.classList.remove('detail-resizing');
   document.removeEventListener('pointermove', onDetailResizePointerMove);
   document.removeEventListener('pointercancel', onDetailResizePointerUp);
