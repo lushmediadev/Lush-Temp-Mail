@@ -19,6 +19,7 @@ const state = {
   users: [],
   editingUserId: null,
   excludedAliases: [],
+  detailPaneWidth: null,
 };
 
 const dom = {};
@@ -29,12 +30,18 @@ let relativeTimeTimer = null;
 let adminEventsSource = null;
 let adminEventReconnectTimer = null;
 let adminEventVersion = 0;
+let detailResizeActive = false;
 
 const AUTO_VIEW_REFRESH_MS = 15000;
 const RELATIVE_TIME_REFRESH_MS = 10000;
 const STREAM_RECONNECT_DELAY_MS = 2500;
 const NEW_MESSAGE_HIGHLIGHT_MS = 180000;
 const MESSAGES_PER_PAGE = 12;
+const DETAIL_WIDTH_STORAGE_KEY = 'lushmail.detailPaneWidth';
+const DETAIL_DEFAULT_WIDTH = 420;
+const DETAIL_MIN_WIDTH = 360;
+const DETAIL_MAX_WIDTH = 760;
+const MAIL_LIST_MIN_WIDTH = 420;
 const AVATAR_PALETTES = [
   { background: 'linear-gradient(135deg, #ff7b57 0%, #ff5528 100%)', color: '#fff7f5' },
   { background: 'linear-gradient(135deg, #ff9a5a 0%, #f97316 100%)', color: '#fffaf4' },
@@ -46,6 +53,7 @@ const AVATAR_PALETTES = [
 
 document.addEventListener('DOMContentLoaded', async () => {
   cacheDom();
+  initDetailPaneWidth();
   bindEvents();
   lucide.createIcons();
   await bootstrapSession();
@@ -63,6 +71,7 @@ function cacheDom() {
     'createUserBtn', 'userModal', 'userForm', 'userModalTitle', 'userUsernameInput',
     'userPasswordInput', 'userPasswordHint', 'userRoleInput', 'userFormError',
     'closeUserModalBtn', 'cancelUserFormBtn', 'saveUserBtn', 'emailDetail',
+    'detailResizeHandle',
     'autoDeleteCount', 'autoDeleteForm', 'autoDeleteAddressInput', 'autoDeleteReasonInput',
     'saveAutoDeleteBtn', 'autoDeleteList', 'autoDeleteEmptyState',
   ];
@@ -100,6 +109,9 @@ function bindEvents() {
   document.addEventListener('click', onDocumentClick);
   document.addEventListener('keydown', onGlobalKeyDown);
   document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('resize', onWindowResize);
+  dom.detailResizeHandle.addEventListener('pointerdown', onDetailResizePointerDown);
+  dom.detailResizeHandle.addEventListener('keydown', onDetailResizeKeyDown);
 }
 
 function onDocumentClick(event) {
@@ -371,6 +383,103 @@ function openSidebar() {
 function closeSidebar() {
   dom.sidebar.classList.add('-translate-x-full');
   dom.sidebarOverlay.classList.add('hidden');
+}
+
+function initDetailPaneWidth() {
+  const savedWidth = readStoredDetailPaneWidth();
+  applyDetailPaneWidth(savedWidth || getDefaultDetailPaneWidth(), { persist: false });
+}
+
+function readStoredDetailPaneWidth() {
+  try {
+    const value = Number.parseInt(localStorage.getItem(DETAIL_WIDTH_STORAGE_KEY) || '', 10);
+    return Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function getDetailWidthBounds() {
+  const containerWidth = dom.emailDetail?.parentElement?.getBoundingClientRect().width || window.innerWidth;
+  const maxFromLayout = Math.max(DETAIL_MIN_WIDTH, containerWidth - MAIL_LIST_MIN_WIDTH);
+  return {
+    min: DETAIL_MIN_WIDTH,
+    max: Math.max(DETAIL_MIN_WIDTH, Math.min(DETAIL_MAX_WIDTH, maxFromLayout)),
+  };
+}
+
+function getDefaultDetailPaneWidth() {
+  return Math.max(DETAIL_DEFAULT_WIDTH, Math.round((window.innerWidth * 0.5) - 380));
+}
+
+function clampDetailPaneWidth(width) {
+  const bounds = getDetailWidthBounds();
+  return Math.min(bounds.max, Math.max(bounds.min, Math.round(width)));
+}
+
+function applyDetailPaneWidth(width, options = {}) {
+  const { persist = true } = options;
+  const nextWidth = clampDetailPaneWidth(width);
+  state.detailPaneWidth = nextWidth;
+  document.documentElement.style.setProperty('--mail-detail-width', `${nextWidth}px`);
+  if (persist) {
+    try {
+      localStorage.setItem(DETAIL_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {
+      // Ignore storage failures; resizing should still work for the current page.
+    }
+  }
+}
+
+function onDetailResizePointerDown(event) {
+  if (window.innerWidth < 1024 || event.button !== 0) {
+    return;
+  }
+  event.preventDefault();
+  detailResizeActive = true;
+  document.body.classList.add('detail-resizing');
+  dom.detailResizeHandle.setPointerCapture?.(event.pointerId);
+  document.addEventListener('pointermove', onDetailResizePointerMove);
+  document.addEventListener('pointerup', onDetailResizePointerUp, { once: true });
+  document.addEventListener('pointercancel', onDetailResizePointerUp, { once: true });
+  applyDetailPaneWidth(window.innerWidth - event.clientX);
+}
+
+function onDetailResizePointerMove(event) {
+  if (!detailResizeActive) {
+    return;
+  }
+  event.preventDefault();
+  applyDetailPaneWidth(window.innerWidth - event.clientX);
+}
+
+function onDetailResizePointerUp() {
+  detailResizeActive = false;
+  document.body.classList.remove('detail-resizing');
+  document.removeEventListener('pointermove', onDetailResizePointerMove);
+  document.removeEventListener('pointercancel', onDetailResizePointerUp);
+}
+
+function onDetailResizeKeyDown(event) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+    return;
+  }
+  event.preventDefault();
+  const currentWidth = state.detailPaneWidth || DETAIL_DEFAULT_WIDTH;
+  if (event.key === 'Home') {
+    applyDetailPaneWidth(DETAIL_MIN_WIDTH);
+    return;
+  }
+  if (event.key === 'End') {
+    applyDetailPaneWidth(DETAIL_MAX_WIDTH);
+    return;
+  }
+  const delta = event.shiftKey ? 48 : 24;
+  applyDetailPaneWidth(currentWidth + (event.key === 'ArrowLeft' ? delta : -delta));
+}
+
+function onWindowResize() {
+  applyDetailPaneWidth(state.detailPaneWidth || getDefaultDetailPaneWidth(), { persist: false });
 }
 
 function setAdminView(viewName) {

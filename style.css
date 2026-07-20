@@ -1,4 +1,7 @@
-html { scroll-behavior: smooth; }
+html {
+  scroll-behavior: smooth;
+  --mail-detail-width: 420px;
+}
 body { overflow: hidden; }
 
 #appPage {
@@ -31,6 +34,10 @@ body { overflow: hidden; }
 
 #appPage.users-mode #emailDetail {
   display: none !important;
+}
+
+#emailDetail {
+  width: var(--mail-detail-width);
 }
 
 .folder-btn { color: #6b7280; }
@@ -181,12 +188,78 @@ body { overflow: hidden; }
   top: 4rem;
   right: 0;
   bottom: 0;
-  width: max(420px, calc(50vw - 380px));
+  width: var(--mail-detail-width);
   border-left: 1px solid #f3f4f6;
   background: #ffffff;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.detail-resize-handle {
+  position: fixed;
+  top: 4rem;
+  right: calc(var(--mail-detail-width) - 5px);
+  bottom: 0;
+  width: 10px;
+  z-index: 40;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.detail-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: background-color 0.15s ease;
+}
+
+.detail-resize-knob {
+  width: 26px;
+  height: 42px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transform: scale(0.96);
+  transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.detail-resize-handle:hover::before,
+.detail-resize-handle:focus-visible::before,
+body.detail-resizing .detail-resize-handle::before {
+  background: #e5e7eb;
+}
+
+.detail-resize-handle:hover .detail-resize-knob,
+.detail-resize-handle:focus-visible .detail-resize-knob,
+body.detail-resizing .detail-resize-knob {
+  opacity: 1;
+  transform: scale(1);
+  color: #64748b;
+  border-color: #dbe2ea;
+}
+
+body.detail-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.detail-resizing * {
+  cursor: col-resize !important;
 }
 
 .detail-panel-content {
@@ -906,6 +979,7 @@ body { overflow: hidden; }
 
 @media (max-width: 1023px) {
   #emailDetail { display: none !important; }
+  .detail-resize-handle { display: none !important; }
   body { overflow: auto; }
   #appPage { height: auto; min-height: 100vh; }
   .detail-panel-content {

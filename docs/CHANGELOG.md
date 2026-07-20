@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-07-20 00:00 - add_resizable_admin_reader
+- Added: desktop admin inbox reader can be resized by dragging the subtle hover handle between the message list and detail pane.
+- Changed: reader width is persisted in `localStorage` and clamped so the message list keeps usable width.
+- Affected files: `index.html`, `app.js`, `style.css`.
+- Impact/Risk: low; desktop-only UI behavior, mobile reader remains unchanged.
+
 ### 2026-07-20 00:00 - add_auto_delete_excluded_aliases
 - Added: admin `Tự động xoá` view for excluded aliases that should never enter the inbox.
 - Added: backend `excluded_aliases` table and API routes to list, create, and delete excluded aliases.
