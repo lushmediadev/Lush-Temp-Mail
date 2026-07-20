@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-07-20 00:00 - add_auto_delete_excluded_aliases
+- Added: admin `Tự động xoá` view for excluded aliases that should never enter the inbox.
+- Added: backend `excluded_aliases` table and API routes to list, create, and delete excluded aliases.
+- Changed: inbound message storage now skips recipients in the excluded list, and adding an alias hides older messages for the same address.
+- Affected files: `backend/app/db.py`, `backend/app/main.py`, `index.html`, `app.js`, `style.css`, `backend/tests/test_excluded_aliases.py`.
+- Impact/Risk: medium; changes inbound storage behavior for aliases explicitly added by admin.
+
 ### 2026-05-13 00:00 - add_admin_sent_mailbox
 - Added: admin `Đã gửi` mailbox replacing the old sidebar OTP/link quick filters, with sent rows showing recipients, mode, timestamp, and attachment count.
 - Added: persisted `sent_messages` and `sent_message_attachments` storage so reply/forward sends can be searched, opened, deleted, and downloaded from the sent folder.

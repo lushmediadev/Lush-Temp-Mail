@@ -759,6 +759,98 @@ body { overflow: hidden; }
   border: 1px solid #e5e7eb;
 }
 
+.auto-delete-shell {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.auto-delete-intro {
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.auto-delete-icon,
+.auto-delete-row-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: #fff7f5;
+  color: #ff5528;
+  border: 1px solid #ffd9cc;
+}
+
+.auto-delete-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.auto-delete-submit {
+  min-height: 46px;
+  padding: 0 16px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-shrink: 0;
+  background: #ff5528;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.auto-delete-submit:hover:not(:disabled) {
+  background: #e64a20;
+  box-shadow: 0 10px 22px -16px rgba(255, 85, 40, 0.8);
+}
+
+.auto-delete-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auto-delete-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.auto-delete-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 78px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 14px 16px;
+}
+
+.auto-delete-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid #ffd9cc;
+  background: #fff7f5;
+  color: #cc3f18;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .pagination-btn {
   min-width: 40px;
   height: 40px;
@@ -832,6 +924,17 @@ body { overflow: hidden; }
     border-top: 1px solid #eceff3;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .auto-delete-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .auto-delete-submit {
+    width: 100%;
   }
 }
 

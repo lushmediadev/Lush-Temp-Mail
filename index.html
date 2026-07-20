@@ -38,7 +38,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20260513-sent-mail">
+  <link rel="stylesheet" href="style.css?v=20260720-auto-delete">
 </head>
 <body class="font-inter antialiased bg-white text-gray-800 min-h-screen">
   <div id="loginPage" class="min-h-screen flex items-center justify-center relative overflow-hidden">
@@ -130,6 +130,10 @@
               <i data-lucide="users" class="w-4.5 h-4.5"></i>
               <span class="flex-1 text-left">Người dùng</span>
             </button>
+            <button id="autoDeleteTabBtn" type="button" class="folder-btn admin-tab-btn w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 mt-0.5" data-admin-view="auto-delete">
+              <i data-lucide="mail-x" class="w-4.5 h-4.5"></i>
+              <span class="flex-1 text-left">Tự động xoá</span>
+            </button>
           </div>
         </nav>
 
@@ -198,6 +202,59 @@
               <i data-lucide="users" class="w-6 h-6 text-gray-300"></i>
             </div>
             <p class="text-sm font-semibold text-gray-500">Chưa có user nào</p>
+          </div>
+        </div>
+      </main>
+
+      <main id="autoDeleteView" class="hidden flex-1 flex-col min-w-0 app-main-shell">
+        <div class="border-b border-gray-100 px-4 sm:px-6 py-3 bg-white">
+          <div class="user-content-shell flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+              <h3 class="font-fustat text-lg font-bold text-gray-900">Tự động xoá</h3>
+              <span id="autoDeleteCount" class="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-0.5 rounded-full">0 alias</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto bg-white px-4 sm:px-6 py-5">
+          <div class="auto-delete-shell">
+            <div class="auto-delete-intro">
+              <div class="flex items-start gap-3 min-w-0">
+                <div class="auto-delete-icon">
+                  <i data-lucide="mail-x" class="w-5 h-5"></i>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-sm font-bold text-gray-900">Alias trong danh sách này sẽ không vào inbox.</p>
+                  <p class="text-sm text-gray-500 mt-1">Khi mail gửi tới alias bị loại trừ, hệ thống bỏ qua ngay lúc đồng bộ và ẩn các thư cũ cùng alias.</p>
+                </div>
+              </div>
+            </div>
+
+            <form id="autoDeleteForm" class="auto-delete-form">
+              <div class="flex-1 min-w-0">
+                <label for="autoDeleteAddressInput" class="block text-sm font-semibold text-gray-700 mb-1.5">Alias cần loại trừ</label>
+                <input id="autoDeleteAddressInput" type="email" autocomplete="off" placeholder="adh@lushmedia.net" required
+                  class="w-full px-3.5 py-3 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all placeholder:text-gray-400">
+              </div>
+              <div class="flex-1 min-w-0">
+                <label for="autoDeleteReasonInput" class="block text-sm font-semibold text-gray-700 mb-1.5">Ghi chú</label>
+                <input id="autoDeleteReasonInput" type="text" autocomplete="off" placeholder="Spam, bot rác..."
+                  class="w-full px-3.5 py-3 rounded-xl border border-gray-200 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-lush-500/30 focus:border-lush-400 transition-all placeholder:text-gray-400">
+              </div>
+              <button id="saveAutoDeleteBtn" type="submit" class="auto-delete-submit">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                Thêm alias
+              </button>
+            </form>
+
+            <div id="autoDeleteList" class="auto-delete-list"></div>
+            <div id="autoDeleteEmptyState" class="hidden py-14 text-center">
+              <div class="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="mail-x" class="w-6 h-6 text-gray-300"></i>
+              </div>
+              <p class="text-sm font-semibold text-gray-500">Chưa có alias nào bị loại trừ</p>
+              <p class="text-xs text-gray-400 mt-1">Thêm alias spam để hệ thống tự bỏ qua thư mới gửi tới địa chỉ đó.</p>
+            </div>
           </div>
         </div>
       </main>
@@ -273,6 +330,6 @@
     <span id="toastMsg">Done</span>
   </div>
 
-  <script src="app.js?v=20260513-sent-mail"></script>
+  <script src="app.js?v=20260720-auto-delete"></script>
 </body>
 </html>

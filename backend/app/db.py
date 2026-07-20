@@ -106,6 +106,15 @@ def init_db() -> None:
                 FOREIGN KEY(source_message_id) REFERENCES messages(id) ON DELETE SET NULL
             );
 
+            CREATE TABLE IF NOT EXISTS excluded_aliases (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                address TEXT NOT NULL UNIQUE,
+                local_part TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                reason TEXT,
+                created_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_recipient_received_at
             ON messages(recipient_address, received_at DESC);
 
@@ -114,6 +123,9 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_sent_messages_sent_at
             ON sent_messages(sent_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_excluded_aliases_address
+            ON excluded_aliases(address);
             """
         )
         _ensure_message_mailbox_namespace(conn)
@@ -412,6 +424,19 @@ def row_to_sent_message(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "important": False,
         "suppressed": bool(row["suppressed"]),
         "can_translate": False,
+    }
+
+
+def row_to_excluded_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    return {
+        "id": row["id"],
+        "address": row["address"],
+        "local_part": row["local_part"],
+        "domain": row["domain"],
+        "reason": row["reason"] or "",
+        "created_at": row["created_at"],
     }
 
 
@@ -816,6 +841,81 @@ def reactivate_alias(alias_id: int, additional_hours: int | None = None) -> dict
     return update_alias(alias_id, status="active", expires_at=expires_at)
 
 
+def list_excluded_aliases(search: str = "") -> list[dict[str, Any]]:
+    query = "SELECT * FROM excluded_aliases"
+    values: list[Any] = []
+    if search:
+        pattern = f"%{search.lower()}%"
+        query += " WHERE LOWER(address) LIKE ? OR LOWER(local_part) LIKE ? OR LOWER(COALESCE(reason, '')) LIKE ?"
+        values.extend([pattern, pattern, pattern])
+    query += " ORDER BY created_at DESC, id DESC"
+    with _connect() as conn:
+        rows = conn.execute(query, values).fetchall()
+    return [row_to_excluded_alias(row) for row in rows]
+
+
+def get_excluded_alias_by_address(address: str) -> dict[str, Any] | None:
+    normalized = normalize_address(address)
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM excluded_aliases WHERE address = ?", (normalized,)).fetchone()
+    return row_to_excluded_alias(row)
+
+
+def is_excluded_alias(address: str) -> bool:
+    return get_excluded_alias_by_address(address) is not None
+
+
+def suppress_messages_for_address(address: str) -> int:
+    normalized = normalize_address(address)
+    with _connect() as conn:
+        alias_rows = conn.execute(
+            """
+            SELECT DISTINCT alias_id
+            FROM messages
+            WHERE recipient_address = ? AND alias_id IS NOT NULL
+            """,
+            (normalized,),
+        ).fetchall()
+        cursor = conn.execute(
+            "UPDATE messages SET suppressed = 1 WHERE suppressed = 0 AND recipient_address = ?",
+            (normalized,),
+        )
+        for row in alias_rows:
+            _refresh_alias_stats(conn, row["alias_id"])
+    return cursor.rowcount
+
+
+def create_excluded_alias(address: str, reason: str | None = None) -> dict[str, Any]:
+    normalized = normalize_address(address)
+    local_part, domain = split_address(normalized)
+    if not local_part or not domain:
+        raise ValueError("alias không hợp lệ")
+
+    created_at = utc_now_iso()
+    clean_reason = (reason or "").strip() or None
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO excluded_aliases(address, local_part, domain, reason, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(address) DO UPDATE SET reason = excluded.reason
+            """,
+            (normalized, local_part, domain, clean_reason, created_at),
+        )
+        row = conn.execute("SELECT * FROM excluded_aliases WHERE address = ?", (normalized,)).fetchone()
+    suppress_messages_for_address(normalized)
+    return row_to_excluded_alias(row)
+
+
+def delete_excluded_alias(excluded_alias_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM excluded_aliases WHERE id = ?", (excluded_alias_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM excluded_aliases WHERE id = ?", (excluded_alias_id,))
+    return row_to_excluded_alias(row)
+
+
 def cleanup_expired_aliases(now_iso: str) -> int:
     if settings.default_alias_hours <= 0:
         return 0
@@ -854,6 +954,9 @@ def _default_alias_expires_at() -> str | None:
 
 def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
     recipient_address = normalize_address(payload["recipient_address"])
+    if is_excluded_alias(recipient_address):
+        return None
+
     imap_mailbox = str(payload.get("imap_mailbox") or settings.imap_username or settings.central_mailbox or "default")
     alias = get_alias_by_address(recipient_address)
     if alias is None:

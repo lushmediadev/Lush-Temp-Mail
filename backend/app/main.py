@@ -20,7 +20,7 @@ from .events import inbox_events
 from .imap_sync import MailSyncService, fetch_message_attachment_payloads
 from .mailer import send_composed_message
 from .translator import DEFAULT_TARGET_LANGUAGE, translate_message
-from .utils import iso_in_hours, is_valid_local_part, normalize_lookup_address, random_local_part
+from .utils import iso_in_hours, is_valid_local_part, normalize_address, normalize_lookup_address, random_local_part
 
 
 mail_sync = MailSyncService()
@@ -347,6 +347,35 @@ def delete_mailbox(alias_id: int, _session=Depends(require_admin)) -> dict[str, 
     if mailbox is None:
         raise HTTPException(status_code=404, detail="Mailbox không tồn tại")
     return {"item": mailbox}
+
+
+@app.get("/api/excluded-aliases")
+def list_excluded_aliases(
+    search: str = Query(default=""),
+    _session=Depends(require_admin),
+) -> dict[str, Any]:
+    return {"items": db.list_excluded_aliases(search=search)}
+
+
+@app.post("/api/excluded-aliases")
+def create_excluded_alias(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    address = normalize_address(payload.get("address") or "")
+    reason = str(payload.get("reason") or "").strip() or None
+    try:
+        item = db.create_excluded_alias(address, reason=reason)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    inbox_events.publish([item["address"]])
+    return {"item": item}
+
+
+@app.delete("/api/excluded-aliases/{excluded_alias_id}")
+def delete_excluded_alias(excluded_alias_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
+    item = db.delete_excluded_alias(excluded_alias_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Alias không tồn tại trong danh sách tự động xoá")
+    inbox_events.publish([item["address"]])
+    return {"item": item}
 
 
 @app.get("/api/messages")

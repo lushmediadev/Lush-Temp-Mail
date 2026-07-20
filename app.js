@@ -18,6 +18,7 @@ const state = {
   currentView: 'mail',
   users: [],
   editingUserId: null,
+  excludedAliases: [],
 };
 
 const dom = {};
@@ -57,10 +58,13 @@ function cacheDom() {
     'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay', 'sidebarToggle',
     'closeSidebarBtn', 'mainSearch', 'deleteAllBtn', 'toast',
     'toastMsg', 'closeMobileDetailBtn', 'paginationInfo', 'paginationControls',
-    'mailView', 'usersView', 'usersTabBtn', 'userCount', 'userList', 'userEmptyState',
+    'mailView', 'usersView', 'autoDeleteView', 'usersTabBtn', 'autoDeleteTabBtn',
+    'userCount', 'userList', 'userEmptyState',
     'createUserBtn', 'userModal', 'userForm', 'userModalTitle', 'userUsernameInput',
     'userPasswordInput', 'userPasswordHint', 'userRoleInput', 'userFormError',
     'closeUserModalBtn', 'cancelUserFormBtn', 'saveUserBtn', 'emailDetail',
+    'autoDeleteCount', 'autoDeleteForm', 'autoDeleteAddressInput', 'autoDeleteReasonInput',
+    'saveAutoDeleteBtn', 'autoDeleteList', 'autoDeleteEmptyState',
   ];
   ids.forEach((id) => { dom[id] = document.getElementById(id); });
 }
@@ -75,7 +79,9 @@ function bindEvents() {
   dom.mainSearch.addEventListener('input', onMainSearchChange);
   dom.closeMobileDetailBtn.addEventListener('click', closeMobileDetail);
   dom.usersTabBtn.addEventListener('click', () => setAdminView('users'));
+  dom.autoDeleteTabBtn.addEventListener('click', () => setAdminView('auto-delete'));
   dom.createUserBtn.addEventListener('click', openCreateUserModal);
+  dom.autoDeleteForm.addEventListener('submit', onAutoDeleteFormSubmit);
   dom.userForm.addEventListener('submit', onUserFormSubmit);
   dom.closeUserModalBtn.addEventListener('click', closeUserModal);
   dom.cancelUserFormBtn.addEventListener('click', closeUserModal);
@@ -223,6 +229,7 @@ async function logout() {
   state.currentView = 'mail';
   state.users = [];
   state.editingUserId = null;
+  state.excludedAliases = [];
   stopAutoRefresh();
   stopRelativeTimeTicker();
   stopAdminEventStream();
@@ -367,23 +374,31 @@ function closeSidebar() {
 }
 
 function setAdminView(viewName) {
-  const nextView = viewName === 'users' ? 'users' : 'mail';
+  const nextView = ['users', 'auto-delete'].includes(viewName) ? viewName : 'mail';
   state.currentView = nextView;
-  dom.appPage.classList.toggle('users-mode', nextView === 'users');
+  dom.appPage.classList.toggle('users-mode', nextView !== 'mail');
   dom.mailView.classList.toggle('hidden', nextView !== 'mail');
   dom.mailView.classList.toggle('flex', nextView === 'mail');
   dom.usersView.classList.toggle('hidden', nextView !== 'users');
   dom.usersView.classList.toggle('flex', nextView === 'users');
+  dom.autoDeleteView.classList.toggle('hidden', nextView !== 'auto-delete');
+  dom.autoDeleteView.classList.toggle('flex', nextView === 'auto-delete');
   document.querySelectorAll('#mailNav .folder-btn').forEach((button) => {
     if (button.dataset.filter) {
       button.classList.toggle('active', nextView === 'mail' && button.dataset.filter === state.currentFilter);
     }
   });
   dom.usersTabBtn.classList.toggle('active', nextView === 'users');
+  dom.autoDeleteTabBtn.classList.toggle('active', nextView === 'auto-delete');
   if (nextView === 'users') {
     closeMobileDetail();
     resetDetail();
     loadUsers().catch(handleError);
+  }
+  if (nextView === 'auto-delete') {
+    closeMobileDetail();
+    resetDetail();
+    loadExcludedAliases().catch(handleError);
   }
   closeSidebar();
   lucide.createIcons();
@@ -841,6 +856,91 @@ async function deleteUser(userId) {
   await api(`/api/users/${userId}`, { method: 'DELETE' });
   await loadUsers();
   showToast('Đã xóa user');
+}
+
+async function loadExcludedAliases() {
+  const payload = await api('/api/excluded-aliases');
+  state.excludedAliases = payload.items || [];
+  renderExcludedAliases();
+}
+
+function renderExcludedAliases() {
+  dom.autoDeleteCount.textContent = `${state.excludedAliases.length} alias`;
+  if (!state.excludedAliases.length) {
+    dom.autoDeleteList.innerHTML = '';
+    dom.autoDeleteEmptyState.classList.remove('hidden');
+    lucide.createIcons();
+    return;
+  }
+
+  dom.autoDeleteEmptyState.classList.add('hidden');
+  dom.autoDeleteList.innerHTML = state.excludedAliases.map((item) => {
+    const createdAt = item.created_at ? formatFullDate(item.created_at) : '-';
+    const reason = item.reason ? escapeHtml(item.reason) : 'Không có ghi chú';
+    return `
+      <div class="auto-delete-row" data-excluded-alias-id="${item.id}">
+        <div class="auto-delete-row-icon">
+          <i data-lucide="mail-x" class="w-4 h-4"></i>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-sm font-bold text-gray-900 break-all">${escapeHtml(item.address)}</p>
+            <span class="auto-delete-badge">Tự động xoá</span>
+          </div>
+          <p class="text-sm text-gray-500 mt-1">${reason}</p>
+          <p class="text-xs text-gray-400 mt-1">Thêm lúc: ${escapeHtml(createdAt)}</p>
+        </div>
+        <button class="user-action-btn danger" type="button" title="Bỏ loại trừ" data-delete-excluded-alias="${item.id}">
+          <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+
+  dom.autoDeleteList.querySelectorAll('[data-delete-excluded-alias]').forEach((button) => {
+    button.addEventListener('click', () => deleteExcludedAlias(Number(button.dataset.deleteExcludedAlias)).catch(handleError));
+  });
+  lucide.createIcons();
+}
+
+async function onAutoDeleteFormSubmit(event) {
+  event.preventDefault();
+  const address = dom.autoDeleteAddressInput.value.trim();
+  const reason = dom.autoDeleteReasonInput.value.trim();
+  if (!address) {
+    showToast('Nhập alias cần loại trừ');
+    return;
+  }
+
+  dom.saveAutoDeleteBtn.disabled = true;
+  try {
+    await api('/api/excluded-aliases', {
+      method: 'POST',
+      body: JSON.stringify({ address, reason }),
+    });
+    dom.autoDeleteAddressInput.value = '';
+    dom.autoDeleteReasonInput.value = '';
+    await Promise.all([
+      loadExcludedAliases(),
+      loadMessages({ preserveDetail: true }),
+    ]);
+    showToast('Đã thêm alias tự động xoá');
+  } finally {
+    dom.saveAutoDeleteBtn.disabled = false;
+  }
+}
+
+async function deleteExcludedAlias(excludedAliasId) {
+  const item = state.excludedAliases.find((alias) => alias.id === excludedAliasId);
+  if (!item) {
+    return;
+  }
+  if (!window.confirm(`Bỏ loại trừ ${item.address}?`)) {
+    return;
+  }
+  await api(`/api/excluded-aliases/${excludedAliasId}`, { method: 'DELETE' });
+  await loadExcludedAliases();
+  showToast('Đã bỏ alias khỏi danh sách tự động xoá');
 }
 
 async function handleMessageRowClick(messageId, event) {
