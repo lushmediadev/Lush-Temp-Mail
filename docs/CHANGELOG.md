@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-07-20 00:00 - expand_admin_mail_full_width
+- Changed: admin mail app shell now uses the full desktop viewport width instead of leaving unused space beyond 1600px.
+- Affected files: `index.html`.
+- Impact/Risk: low; desktop layout capacity increases, mobile behavior unchanged.
+
 ### 2026-07-20 00:00 - fix_reader_splitter_drag_snap
 - Fixed: admin reader splitter no longer jumps when pressing the resize icon; dragging now uses pointer delta from the current panel width.
 - Affected files: `index.html`, `app.js`.
