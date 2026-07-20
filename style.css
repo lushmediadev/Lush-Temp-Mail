@@ -184,11 +184,9 @@ body { overflow: hidden; }
 }
 
 .detail-edge-panel {
-  position: fixed;
-  top: 4rem;
-  right: 0;
-  bottom: 0;
-  width: var(--mail-detail-width);
+  position: absolute;
+  inset: 0;
+  width: 100%;
   border-left: 1px solid #f3f4f6;
   background: #ffffff;
   overflow: hidden;
@@ -197,9 +195,9 @@ body { overflow: hidden; }
 }
 
 .detail-resize-handle {
-  position: fixed;
-  top: 4rem;
-  right: calc(var(--mail-detail-width) - 5px);
+  position: absolute;
+  top: 0;
+  left: -5px;
   bottom: 0;
   width: 10px;
   z-index: 40;

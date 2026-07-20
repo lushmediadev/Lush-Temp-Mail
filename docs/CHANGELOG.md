@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-07-20 00:00 - align_admin_reader_splitter
+- Fixed: admin inbox reader now sits directly beside the message list; the shared panel edge acts as the resize hover handle without leaving an empty gutter.
+- Affected files: `index.html`, `style.css`.
+- Impact/Risk: low; desktop-only layout refinement for the admin mail reader.
+
 ### 2026-07-20 00:00 - add_resizable_admin_reader
 - Added: desktop admin inbox reader can be resized by dragging the subtle hover handle between the message list and detail pane.
 - Changed: reader width is persisted in `localStorage` and clamped so the message list keeps usable width.
