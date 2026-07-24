@@ -30,6 +30,7 @@ def test_forward_sends_cc_and_attachments(monkeypatch):
     monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
     monkeypatch.setattr(mailer.settings, "smtp_security", "none")
     monkeypatch.setattr(mailer.settings, "smtp_password", "")
+    monkeypatch.setattr(mailer.settings, "smtp_from_address", "contact@lushmedia.net")
 
     result = mailer.send_composed_message(
         source_message={"message_id": "<source@example.com>"},
@@ -50,8 +51,9 @@ def test_forward_sends_cc_and_attachments(monkeypatch):
     )
 
     message = sent["message"]
-    assert sent["from_addr"] == "billing@lushmedia.net"
+    assert sent["from_addr"] == "contact@lushmedia.net"
     assert "billing@lushmedia.net" in message["From"]
+    assert message["Reply-To"] == "billing@lushmedia.net"
     assert sent["to_addrs"] == ["receiver@example.com", "copy@example.com"]
     assert message["Cc"] == "copy@example.com"
     attachments = list(message.iter_attachments())

@@ -2255,6 +2255,14 @@ async function api(url, options = {}) {
         detail = rawText;
       }
     }
+    const normalizedDetail = String(detail).trim().toLowerCase();
+    if (
+      normalizedDetail.includes('<!doctype html')
+      || normalizedDetail.includes('<html')
+      || normalizedDetail.includes('</body>')
+    ) {
+      detail = 'Máy chủ tạm thời không phản hồi. Vui lòng thử lại.';
+    }
     const error = new Error(detail);
     error.status = response.status;
     throw error;

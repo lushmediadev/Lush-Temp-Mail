@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-07-24 - fix_alias_sender_smtp_delivery
+- Fixed: composer keeps the selected alias in visible `From` and `Reply-To` headers while using the authenticated mailbox as the SMTP envelope sender.
+- Fixed: raw HTML gateway errors are replaced with a concise Vietnamese message instead of being rendered inside the composer.
+- Verified: SMTP unit coverage asserts the split visible/envelope sender contract.
+
 ### 2026-07-24 - standalone_email_composer
 - Added: orange `Soạn mail` toolbar action, standalone compose modal, and authenticated `POST /api/messages/send` delivery flow.
 - Changed: standalone sent messages now use the `Mới` label instead of being displayed as replies.

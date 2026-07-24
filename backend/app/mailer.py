@@ -34,6 +34,7 @@ def send_composed_message(
         if from_value is not None
         else settings.smtp_from_address
     )
+    envelope_from_address = settings.smtp_from_address
     to_addresses = parse_address_list(to_value)
     cc_addresses = parse_address_list(cc_value)
     recipients = to_addresses + cc_addresses
@@ -49,6 +50,8 @@ def send_composed_message(
 
     message = EmailMessage()
     message["From"] = formataddr((settings.smtp_from_name, from_address))
+    if from_address != envelope_from_address:
+        message["Reply-To"] = from_address
     message["To"] = ", ".join(to_addresses)
     if cc_addresses:
         message["Cc"] = ", ".join(cc_addresses)
@@ -92,7 +95,7 @@ def send_composed_message(
             client.ehlo()
         if settings.smtp_username and settings.smtp_password:
             client.login(settings.smtp_username, settings.smtp_password)
-        client.send_message(message, from_addr=from_address, to_addrs=recipients)
+        client.send_message(message, from_addr=envelope_from_address, to_addrs=recipients)
     finally:
         try:
             client.quit()
