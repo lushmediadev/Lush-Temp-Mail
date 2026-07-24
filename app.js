@@ -76,7 +76,7 @@ function cacheDom() {
     'detailResizeHandle',
     'autoDeleteCount', 'autoDeleteForm', 'autoDeleteAddressInput', 'autoDeleteReasonInput',
     'saveAutoDeleteBtn', 'autoDeleteList', 'autoDeleteEmptyState',
-    'newMessageModal', 'newMessageForm', 'newMessageTo', 'newMessageCc',
+    'newMessageModal', 'newMessageForm', 'newMessageFrom', 'newMessageTo', 'newMessageCc',
     'newMessageSubject', 'newMessageBody', 'newMessageError', 'closeNewMessageBtn',
     'cancelNewMessageBtn', 'sendNewMessageBtn',
   ];
@@ -1720,7 +1720,7 @@ function openNewMessageComposer() {
   dom.newMessageError.textContent = '';
   dom.newMessageModal.classList.remove('hidden');
   dom.newMessageModal.classList.add('flex');
-  requestAnimationFrame(() => dom.newMessageTo.focus());
+  requestAnimationFrame(() => dom.newMessageFrom.focus());
   lucide.createIcons();
 }
 
@@ -1741,6 +1741,7 @@ async function sendNewMessage(event) {
     await api('/api/messages/send', {
       method: 'POST',
       body: JSON.stringify({
+        from_alias: dom.newMessageFrom.value,
         to: dom.newMessageTo.value,
         cc: dom.newMessageCc.value,
         subject: dom.newMessageSubject.value,

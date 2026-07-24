@@ -16,7 +16,7 @@ def test_standalone_send_endpoint_sends_and_stores_message(monkeypatch):
             "to": ["receiver@example.com"],
             "cc": [],
             "subject": kwargs["subject"],
-            "from": "contact@lushmedia.net",
+            "from": kwargs["from_value"],
             "message_id": "<new-message@lushmedia.net>",
             "attachment_count": 0,
         }
@@ -30,6 +30,7 @@ def test_standalone_send_endpoint_sends_and_stores_message(monkeypatch):
 
     result = main.send_new_message(
         {
+            "from_alias": "sales@lushmedia.net",
             "to": "receiver@example.com",
             "cc": "",
             "subject": "Email mới",
@@ -41,6 +42,7 @@ def test_standalone_send_endpoint_sends_and_stores_message(monkeypatch):
     assert result["ok"] is True
     assert captured["source_message"] == {}
     assert captured["mode"] == "send"
+    assert captured["from_value"] == "sales@lushmedia.net"
     assert captured["attachments"] == []
     assert captured["stored"]["source_message_id"] is None
     assert captured["stored"]["mode"] == "send"
@@ -52,8 +54,10 @@ def test_admin_ui_exposes_new_message_composer():
 
     assert 'id="newMessageBtn"' in index_html
     assert 'id="newMessageModal"' in index_html
-    assert "app.js?v=20260724-lushmail-compose" in index_html
+    assert 'id="newMessageFrom"' in index_html
+    assert "app.js?v=20260724-lushmail-compose-sender" in index_html
     assert "function openNewMessageComposer()" in app_js
     assert "function sendNewMessage(event)" in app_js
     assert "'/api/messages/send'" in app_js
+    assert "from_alias: dom.newMessageFrom.value" in app_js
     assert "return 'Mới';" in app_js

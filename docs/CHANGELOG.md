@@ -526,3 +526,6 @@
 - Fixed: Mobile reader is now the only scroll container while a message is open, with body scroll locked and iframe heights refreshed after the overlay opens.
 - Affected files: user.html, user.css, user.js, docs/PROJECT_BRIEF.md, docs/MEMORY_INDEX.md, docs/DECISIONS_INDEX.md, docs/UI_SYSTEM.md
 - Impact/Risk: low-medium; only the user inbox mobile layout/scroll behavior changed, desktop layout is intentionally preserved.
+# 2026-07-24
+
+- Bổ sung alias người gửi bắt buộc cho modal `Soạn mail`; backend chỉ chấp nhận alias thuộc domain LushMail và dùng cùng địa chỉ cho header `From` lẫn SMTP envelope sender.
