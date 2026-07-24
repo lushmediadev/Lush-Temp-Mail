@@ -514,6 +514,39 @@ def translate_email(message_id: int, payload: dict[str, Any] = Body(default={}),
     return {"ok": True, "item": {"message_id": message_id, **result}}
 
 
+@app.post("/api/messages/send")
+def send_new_message(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    try:
+        result = send_composed_message(
+            source_message={},
+            mode="send",
+            to_value=payload.get("to", ""),
+            cc_value=payload.get("cc", ""),
+            subject=payload.get("subject", ""),
+            body=payload.get("body", ""),
+            attachments=[],
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail=f"Gửi mail thất bại: {error}") from error
+
+    sent_item = db.store_sent_message(
+        {
+            "source_message_id": None,
+            "mode": result["mode"],
+            "from_email": result["from"],
+            "to": result["to"],
+            "cc": result["cc"],
+            "subject": result["subject"],
+            "body": payload.get("body", ""),
+            "attachments": [],
+            "message_id": result["message_id"],
+        }
+    )
+    return {"ok": True, "item": result, "sent_item": sent_item}
+
+
 @app.post("/api/messages/{message_id}/send")
 def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
     message = db.get_message(message_id)

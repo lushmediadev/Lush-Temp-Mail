@@ -11,6 +11,7 @@
 
 ## Components
 - Primary buttons use solid orange.
+- The standalone mail composer opens from an orange toolbar action before search and uses a focused modal with To, CC, subject, and message fields.
 - Message rows use simple borders, avatar, sender, subject, preview, and relative time.
 - Detail views use sender meta, subject, timestamp, then rendered email body.
 
@@ -18,4 +19,3 @@
 - Preserve Vietnamese text as UTF-8.
 - Keep border radii and decoration restrained.
 - Do not add decorative cards or marketing sections to operational mail screens.
-

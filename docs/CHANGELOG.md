@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-07-24 - standalone_email_composer
+- Added: orange `Soạn mail` toolbar action, standalone compose modal, and authenticated `POST /api/messages/send` delivery flow.
+- Changed: standalone sent messages now use the `Mới` label instead of being displayed as replies.
+- Verified: backend endpoint/UI regression tests, JavaScript syntax, Python compile, and whitespace checks.
+- Impact/Risk: low; reuses the existing SMTP sender and sent-message storage without changing inbound mail handling.
+
 ### 2026-07-20 00:00 - expand_admin_mail_full_width
 - Changed: admin mail app shell now uses the full desktop viewport width instead of leaving unused space beyond 1600px.
 - Affected files: `index.html`.

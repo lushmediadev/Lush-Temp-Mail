@@ -152,6 +152,12 @@
             <span id="folderCount" class="text-xs text-gray-400 font-medium bg-gray-100 px-2 py-0.5 rounded-full">0 email</span>
           </div>
           <div class="flex items-center gap-2">
+            <button id="newMessageBtn" type="button"
+              class="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-lush-500 hover:bg-lush-600 text-white text-sm font-semibold transition-colors"
+              title="Soạn email mới">
+              <i data-lucide="square-pen" class="w-4 h-4"></i>
+              <span class="hidden sm:inline">Soạn mail</span>
+            </button>
             <div class="hidden sm:flex relative">
               <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"></i>
               <input type="text" id="mainSearch" placeholder="T&#236;m theo alias, sender, subject..."
@@ -288,6 +294,59 @@
       <div id="mobileDetailContent" class="p-4 sm:p-6 bg-[#fffdfa] min-h-full"></div>
     </div>
 
+    <div id="newMessageModal" class="fixed inset-0 z-[70] hidden items-center justify-center px-4">
+      <div class="absolute inset-0 bg-gray-950/45 backdrop-blur-sm" data-new-message-close="true"></div>
+      <form id="newMessageForm" class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+        <div class="flex items-center justify-between gap-4 border-b border-gray-100 px-6 py-5">
+          <div>
+            <h3 class="font-fustat text-xl font-bold text-gray-900">Soạn email mới</h3>
+            <p class="mt-1 text-sm text-gray-500">Gửi email trực tiếp từ địa chỉ LushMail đã cấu hình.</p>
+          </div>
+          <button type="button" id="closeNewMessageBtn" class="p-2 rounded-xl hover:bg-gray-100 transition-colors" aria-label="Đóng">
+            <i data-lucide="x" class="w-5 h-5 text-gray-500"></i>
+          </button>
+        </div>
+
+        <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          <div>
+            <label for="newMessageTo" class="mb-1.5 block text-sm font-semibold text-gray-700">Người nhận</label>
+            <input id="newMessageTo" name="to" type="text" autocomplete="off" required
+              placeholder="email@example.com"
+              class="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm transition-all focus:border-lush-400 focus:outline-none focus:ring-2 focus:ring-lush-500/30">
+          </div>
+          <div>
+            <label for="newMessageCc" class="mb-1.5 block text-sm font-semibold text-gray-700">CC</label>
+            <input id="newMessageCc" name="cc" type="text" autocomplete="off"
+              placeholder="cc@example.com"
+              class="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm transition-all focus:border-lush-400 focus:outline-none focus:ring-2 focus:ring-lush-500/30">
+          </div>
+          <div>
+            <label for="newMessageSubject" class="mb-1.5 block text-sm font-semibold text-gray-700">Tiêu đề</label>
+            <input id="newMessageSubject" name="subject" type="text" autocomplete="off" required
+              placeholder="Nhập tiêu đề..."
+              class="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm transition-all focus:border-lush-400 focus:outline-none focus:ring-2 focus:ring-lush-500/30">
+          </div>
+          <div>
+            <label for="newMessageBody" class="mb-1.5 block text-sm font-semibold text-gray-700">Nội dung</label>
+            <textarea id="newMessageBody" name="body" rows="10" required
+              placeholder="Nhập nội dung email..."
+              class="w-full resize-y rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm leading-6 transition-all focus:border-lush-400 focus:outline-none focus:ring-2 focus:ring-lush-500/30"></textarea>
+          </div>
+          <p id="newMessageError" class="hidden text-sm text-red-500"></p>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button type="button" id="cancelNewMessageBtn"
+            class="rounded-xl border border-gray-200 bg-white px-5 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">Hủy</button>
+          <button type="submit" id="sendNewMessageBtn"
+            class="inline-flex items-center gap-2 rounded-xl bg-lush-500 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-lush-600 disabled:cursor-not-allowed disabled:opacity-60">
+            <i data-lucide="send-horizontal" class="w-4 h-4"></i>
+            <span>Gửi email</span>
+          </button>
+        </div>
+      </form>
+    </div>
+
     <div id="userModal" class="fixed inset-0 z-[70] hidden items-center justify-center px-4">
       <div class="absolute inset-0 bg-gray-950/45 backdrop-blur-sm" data-user-modal-close="true"></div>
       <form id="userForm" class="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl p-6">
@@ -335,6 +394,6 @@
     <span id="toastMsg">Done</span>
   </div>
 
-  <script src="app.js?v=20260720-detail-splitter-drag"></script>
+  <script src="app.js?v=20260724-lushmail-compose"></script>
 </body>
 </html>

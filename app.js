@@ -66,7 +66,7 @@ function cacheDom() {
     'loginPage', 'appPage', 'loginForm', 'loginEmail', 'loginPassword', 'loginError', 'logoutBtn',
     'mailNav', 'folderTitle', 'folderCount', 'emailList', 'emptyState', 'detailContent',
     'mobileDetail', 'mobileDetailContent', 'sidebar', 'sidebarOverlay', 'sidebarToggle',
-    'closeSidebarBtn', 'mainSearch', 'deleteAllBtn', 'toast',
+    'closeSidebarBtn', 'mainSearch', 'deleteAllBtn', 'newMessageBtn', 'toast',
     'toastMsg', 'closeMobileDetailBtn', 'paginationInfo', 'paginationControls',
     'mailView', 'usersView', 'autoDeleteView', 'usersTabBtn', 'autoDeleteTabBtn',
     'userCount', 'userList', 'userEmptyState',
@@ -76,6 +76,9 @@ function cacheDom() {
     'detailResizeHandle',
     'autoDeleteCount', 'autoDeleteForm', 'autoDeleteAddressInput', 'autoDeleteReasonInput',
     'saveAutoDeleteBtn', 'autoDeleteList', 'autoDeleteEmptyState',
+    'newMessageModal', 'newMessageForm', 'newMessageTo', 'newMessageCc',
+    'newMessageSubject', 'newMessageBody', 'newMessageError', 'closeNewMessageBtn',
+    'cancelNewMessageBtn', 'sendNewMessageBtn',
   ];
   ids.forEach((id) => { dom[id] = document.getElementById(id); });
 }
@@ -87,6 +90,7 @@ function bindEvents() {
   dom.closeSidebarBtn.addEventListener('click', closeSidebar);
   dom.sidebarOverlay.addEventListener('click', closeSidebar);
   dom.deleteAllBtn.addEventListener('click', () => deleteAllMessagesInScope().catch(handleError));
+  dom.newMessageBtn.addEventListener('click', openNewMessageComposer);
   dom.mainSearch.addEventListener('input', onMainSearchChange);
   dom.closeMobileDetailBtn.addEventListener('click', closeMobileDetail);
   dom.usersTabBtn.addEventListener('click', () => setAdminView('users'));
@@ -96,6 +100,14 @@ function bindEvents() {
   dom.userForm.addEventListener('submit', onUserFormSubmit);
   dom.closeUserModalBtn.addEventListener('click', closeUserModal);
   dom.cancelUserFormBtn.addEventListener('click', closeUserModal);
+  dom.newMessageForm.addEventListener('submit', sendNewMessage);
+  dom.closeNewMessageBtn.addEventListener('click', closeNewMessageComposer);
+  dom.cancelNewMessageBtn.addEventListener('click', closeNewMessageComposer);
+  dom.newMessageModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.newMessageClose === 'true') {
+      closeNewMessageComposer();
+    }
+  });
   dom.userModal.addEventListener('click', (event) => {
     if (event.target instanceof HTMLElement && event.target.dataset.userModalClose === 'true') {
       closeUserModal();
@@ -131,6 +143,11 @@ function onDocumentClick(event) {
 }
 
 function onGlobalKeyDown(event) {
+  if (event.key === 'Escape' && !dom.newMessageModal.classList.contains('hidden')) {
+    event.preventDefault();
+    closeNewMessageComposer();
+    return;
+  }
   if (isEditableTarget(event.target)) {
     return;
   }
@@ -771,7 +788,7 @@ function renderSentMessageRow(message) {
   const snippet = escapeHtml(message.snippet || message.text_body || '');
   const avatar = getAvatarPresentation(message);
   const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
-  const modeLabel = message.mode === 'forward' ? 'Forward' : 'Reply';
+  const modeLabel = getSentModeLabel(message.mode);
   const attachmentBadge = attachmentCount
     ? `<span class="mail-badge mail-badge-neutral"><i data-lucide="paperclip" class="w-3 h-3"></i>${attachmentCount} tệp</span>`
     : '';
@@ -1427,7 +1444,7 @@ function renderSentDetail(message) {
                 <i data-lucide="send-horizontal" class="w-4 h-4 text-gray-400"></i>
                 <span class="text-sm text-gray-500">${formatFullDate(sentAt)}</span>
               </div>
-              <span class="mail-badge mail-badge-sent">${message.mode === 'forward' ? 'Forward' : 'Reply'}</span>
+              <span class="mail-badge mail-badge-sent">${getSentModeLabel(message.mode)}</span>
             </div>
 
             <div class="detail-address-grid">
@@ -1695,6 +1712,62 @@ async function sendCompose() {
       sendButton.textContent = originalLabel;
     }
   }
+}
+
+function openNewMessageComposer() {
+  dom.newMessageForm.reset();
+  dom.newMessageError.classList.add('hidden');
+  dom.newMessageError.textContent = '';
+  dom.newMessageModal.classList.remove('hidden');
+  dom.newMessageModal.classList.add('flex');
+  requestAnimationFrame(() => dom.newMessageTo.focus());
+  lucide.createIcons();
+}
+
+function closeNewMessageComposer() {
+  dom.newMessageModal.classList.add('hidden');
+  dom.newMessageModal.classList.remove('flex');
+  dom.newMessageError.classList.add('hidden');
+  dom.newMessageError.textContent = '';
+}
+
+async function sendNewMessage(event) {
+  event.preventDefault();
+  dom.newMessageError.classList.add('hidden');
+  dom.newMessageError.textContent = '';
+  dom.sendNewMessageBtn.disabled = true;
+
+  try {
+    await api('/api/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        to: dom.newMessageTo.value,
+        cc: dom.newMessageCc.value,
+        subject: dom.newMessageSubject.value,
+        body: dom.newMessageBody.value,
+      }),
+    });
+    showToast('Đã gửi email');
+    closeNewMessageComposer();
+    if (state.currentFilter === 'sent') {
+      loadMessages({ preserveDetail: true }).catch(handleError);
+    }
+  } catch (error) {
+    dom.newMessageError.textContent = error.message || 'Gửi email thất bại';
+    dom.newMessageError.classList.remove('hidden');
+  } finally {
+    dom.sendNewMessageBtn.disabled = false;
+  }
+}
+
+function getSentModeLabel(mode) {
+  if (mode === 'send') {
+    return 'Mới';
+  }
+  if (mode === 'forward') {
+    return 'Forward';
+  }
+  return 'Reply';
 }
 
 function buildComposeDraft(message, mode) {
