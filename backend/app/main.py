@@ -673,7 +673,11 @@ def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
-        raise HTTPException(status_code=502, detail=f"Gửi mail thất bại: {error}") from error
+        logger.exception("Message delivery failed for message %s", message_id)
+        raise HTTPException(
+            status_code=502,
+            detail="Gửi mail thất bại. Máy chủ gửi mail chưa chấp nhận yêu cầu.",
+        ) from error
 
     sent_item = db.store_sent_message(
         {
