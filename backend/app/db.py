@@ -10,7 +10,7 @@ from typing import Any
 from .config import settings
 from .parser import decode_mime_text, extract_links, extract_otps, html_to_text
 from .translator import DEFAULT_TARGET_LANGUAGE, infer_language_hint, should_offer_translation
-from .utils import iso_in_hours, normalize_address, split_address, utc_now_iso
+from .utils import iso_in_hours, iso_in_seconds, normalize_address, split_address, utc_now_iso
 
 
 PASSWORD_HASH_ITERATIONS = 260_000
@@ -115,6 +115,15 @@ def init_db() -> None:
                 created_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS forwarding_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_address TEXT NOT NULL UNIQUE,
+                target_address TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_recipient_received_at
             ON messages(recipient_address, received_at DESC);
 
@@ -126,9 +135,32 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_excluded_aliases_address
             ON excluded_aliases(address);
+
             """
         )
         _ensure_message_mailbox_namespace(conn)
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS forwarding_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                rule_id INTEGER NOT NULL,
+                message_id INTEGER NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                next_attempt_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                forwarded_at TEXT,
+                UNIQUE(rule_id, message_id),
+                FOREIGN KEY(rule_id) REFERENCES forwarding_rules(id) ON DELETE CASCADE,
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_forwarding_deliveries_due
+            ON forwarding_deliveries(status, next_attempt_at);
+            """
+        )
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "important" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
@@ -437,6 +469,23 @@ def row_to_excluded_alias(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "domain": row["domain"],
         "reason": row["reason"] or "",
         "created_at": row["created_at"],
+    }
+
+
+def row_to_forwarding_rule(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    keys = set(row.keys())
+    return {
+        "id": row["id"],
+        "source_address": row["source_address"],
+        "target_address": row["target_address"],
+        "enabled": bool(row["enabled"]),
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "last_status": row["last_status"] if "last_status" in keys else None,
+        "last_error": (row["last_error"] or "") if "last_error" in keys else "",
+        "last_forwarded_at": row["last_forwarded_at"] if "last_forwarded_at" in keys else None,
     }
 
 
@@ -916,6 +965,182 @@ def delete_excluded_alias(excluded_alias_id: int) -> dict[str, Any] | None:
     return row_to_excluded_alias(row)
 
 
+def list_forwarding_rules() -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                rules.*,
+                (
+                    SELECT deliveries.status
+                    FROM forwarding_deliveries AS deliveries
+                    WHERE deliveries.rule_id = rules.id
+                    ORDER BY deliveries.id DESC
+                    LIMIT 1
+                ) AS last_status,
+                (
+                    SELECT deliveries.last_error
+                    FROM forwarding_deliveries AS deliveries
+                    WHERE deliveries.rule_id = rules.id
+                    ORDER BY deliveries.id DESC
+                    LIMIT 1
+                ) AS last_error,
+                (
+                    SELECT MAX(deliveries.forwarded_at)
+                    FROM forwarding_deliveries AS deliveries
+                    WHERE deliveries.rule_id = rules.id
+                      AND deliveries.status = 'forwarded'
+                ) AS last_forwarded_at
+            FROM forwarding_rules AS rules
+            ORDER BY rules.created_at DESC, rules.id DESC
+            """
+        ).fetchall()
+    return [row_to_forwarding_rule(row) for row in rows]
+
+
+def create_forwarding_rule(source_address: str, target_address: str) -> dict[str, Any]:
+    source = normalize_address(source_address)
+    target = normalize_address(target_address)
+    now = utc_now_iso()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO forwarding_rules(source_address, target_address, enabled, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+            ON CONFLICT(source_address) DO UPDATE SET
+                target_address = excluded.target_address,
+                enabled = 1,
+                updated_at = excluded.updated_at
+            """,
+            (source, target, now, now),
+        )
+        row = conn.execute("SELECT * FROM forwarding_rules WHERE source_address = ?", (source,)).fetchone()
+    return row_to_forwarding_rule(row)
+
+
+def update_forwarding_rule(rule_id: int, *, enabled: bool) -> dict[str, Any] | None:
+    with _connect() as conn:
+        cursor = conn.execute(
+            "UPDATE forwarding_rules SET enabled = ?, updated_at = ? WHERE id = ?",
+            (int(enabled), utc_now_iso(), rule_id),
+        )
+        if cursor.rowcount == 0:
+            return None
+        row = conn.execute("SELECT * FROM forwarding_rules WHERE id = ?", (rule_id,)).fetchone()
+    return row_to_forwarding_rule(row)
+
+
+def delete_forwarding_rule(rule_id: int) -> dict[str, Any] | None:
+    with _connect() as conn:
+        row = conn.execute("SELECT * FROM forwarding_rules WHERE id = ?", (rule_id,)).fetchone()
+        if row is None:
+            return None
+        conn.execute("DELETE FROM forwarding_rules WHERE id = ?", (rule_id,))
+    return row_to_forwarding_rule(row)
+
+
+def _enqueue_forwarding_deliveries(
+    conn: sqlite3.Connection,
+    *,
+    message_id: int,
+    recipient_address: str,
+) -> None:
+    now = utc_now_iso()
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO forwarding_deliveries(
+            rule_id, message_id, status, attempt_count, next_attempt_at, created_at, updated_at
+        )
+        SELECT id, ?, 'pending', 0, ?, ?, ?
+        FROM forwarding_rules
+        WHERE source_address = ? AND enabled = 1
+        """,
+        (message_id, now, now, now, normalize_address(recipient_address)),
+    )
+
+
+def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
+    now = utc_now_iso()
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                deliveries.id AS delivery_id,
+                deliveries.attempt_count AS delivery_attempt_count,
+                rules.source_address AS forwarding_source_address,
+                rules.target_address AS forwarding_target_address,
+                messages.*
+            FROM forwarding_deliveries AS deliveries
+            JOIN forwarding_rules AS rules ON rules.id = deliveries.rule_id
+            JOIN messages ON messages.id = deliveries.message_id
+            WHERE deliveries.status IN ('pending', 'retrying')
+              AND deliveries.next_attempt_at <= ?
+              AND rules.enabled = 1
+              AND messages.suppressed = 0
+            ORDER BY deliveries.next_attempt_at ASC, deliveries.id ASC
+            LIMIT ?
+            """,
+            (now, max(1, int(limit))),
+        ).fetchall()
+
+    deliveries: list[dict[str, Any]] = []
+    for row in rows:
+        message = row_to_message(row)
+        if message is None:
+            continue
+        deliveries.append(
+            {
+                "id": row["delivery_id"],
+                "attempt_count": row["delivery_attempt_count"],
+                "source_address": row["forwarding_source_address"],
+                "target_address": row["forwarding_target_address"],
+                "message": message,
+            }
+        )
+    return deliveries
+
+
+def mark_forwarding_delivery_success(delivery_id: int) -> None:
+    now = utc_now_iso()
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE forwarding_deliveries
+            SET status = 'forwarded', attempt_count = attempt_count + 1,
+                last_error = NULL, updated_at = ?, forwarded_at = ?
+            WHERE id = ?
+            """,
+            (now, now, delivery_id),
+        )
+
+
+def mark_forwarding_delivery_failure(delivery_id: int, error: str) -> None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT attempt_count FROM forwarding_deliveries WHERE id = ?",
+            (delivery_id,),
+        ).fetchone()
+        if row is None:
+            return
+        next_attempt_count = int(row["attempt_count"] or 0) + 1
+        retry_delay = min(3600, 30 * (2 ** min(next_attempt_count - 1, 7)))
+        conn.execute(
+            """
+            UPDATE forwarding_deliveries
+            SET status = 'retrying', attempt_count = ?, last_error = ?,
+                next_attempt_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                next_attempt_count,
+                str(error or "Forwarding failed")[:500],
+                iso_in_seconds(retry_delay),
+                utc_now_iso(),
+                delivery_id,
+            ),
+        )
+
+
 def cleanup_expired_aliases(now_iso: str) -> int:
     if settings.default_alias_hours <= 0:
         return 0
@@ -1005,6 +1230,11 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
         ).fetchone()
         if row is not None and cursor.rowcount > 0:
             _store_attachment_payloads(conn, row["id"], attachment_payloads)
+            _enqueue_forwarding_deliveries(
+                conn,
+                message_id=row["id"],
+                recipient_address=recipient_address,
+            )
     return row_to_message(row)
 
 

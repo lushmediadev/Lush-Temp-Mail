@@ -9,6 +9,10 @@ from .config import settings
 from .utils import normalize_lookup_address
 
 
+MAX_ATTACHMENT_COUNT = 10
+MAX_ATTACHMENT_TOTAL_BYTES = 18 * 1024 * 1024
+
+
 def parse_address_list(value: str) -> list[str]:
     addresses = []
     for _display_name, addr in getaddresses([value or ""]):
@@ -16,6 +20,22 @@ def parse_address_list(value: str) -> list[str]:
         if normalized:
             addresses.append(normalized)
     return addresses
+
+
+def validate_outgoing_attachments(attachments: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    outgoing = attachments or []
+    if len(outgoing) > MAX_ATTACHMENT_COUNT:
+        raise ValueError(f"Chỉ được đính kèm tối đa {MAX_ATTACHMENT_COUNT} tệp")
+
+    total_size = 0
+    for attachment in outgoing:
+        content = attachment.get("content")
+        if content is None:
+            raise ValueError("Không đọc được nội dung tệp đính kèm")
+        total_size += len(bytes(content))
+    if total_size > MAX_ATTACHMENT_TOTAL_BYTES:
+        raise ValueError("Tổng dung lượng tệp đính kèm không được vượt quá 18 MB")
+    return outgoing
 
 
 def send_composed_message(
@@ -27,6 +47,7 @@ def send_composed_message(
     cc_value: str,
     subject: str,
     body: str,
+    html_body: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from_address = (
@@ -66,7 +87,9 @@ def send_composed_message(
         message["References"] = original_message_id
 
     message.set_content(body)
-    outgoing_attachments = attachments or []
+    if html_body and html_body.strip():
+        message.add_alternative(html_body, subtype="html")
+    outgoing_attachments = validate_outgoing_attachments(attachments)
     for attachment in outgoing_attachments:
         content = attachment.get("content")
         if content is None:
@@ -111,3 +134,43 @@ def send_composed_message(
         "message_id": message["Message-Id"],
         "attachment_count": len(outgoing_attachments),
     }
+
+
+def send_automatic_forward(
+    *,
+    source_message: dict[str, Any],
+    target_address: str,
+    attachments: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    source_address = str(source_message.get("recipient_address") or "").strip()
+    sender_name = str(source_message.get("from_name") or source_message.get("from_email") or "Unknown Sender").strip()
+    sender_email = str(source_message.get("from_email") or "").strip()
+    original_subject = str(source_message.get("subject") or "(No subject)").strip()
+    original_body = str(source_message.get("text_body") or source_message.get("snippet") or "").strip()
+    original_html = str(source_message.get("html_body") or "").strip()
+    sender_line = f"{sender_name} <{sender_email}>" if sender_email and sender_email not in sender_name else sender_name
+    body = "\n".join(
+        [
+            f"Email được tự động chuyển tiếp từ {source_address}.",
+            "",
+            "---------- Thư gốc ----------",
+            f"Từ: {sender_line}",
+            f"Đến: {source_address}",
+            f"Ngày: {source_message.get('received_at') or '-'}",
+            f"Tiêu đề: {original_subject}",
+            "",
+            original_body,
+        ]
+    )
+    subject = original_subject if original_subject.lower().startswith("fwd:") else f"Fwd: {original_subject}"
+    return send_composed_message(
+        source_message=source_message,
+        mode="auto-forward",
+        from_value=source_address,
+        to_value=target_address,
+        cc_value="",
+        subject=subject,
+        body=body,
+        html_body=original_html,
+        attachments=attachments,
+    )

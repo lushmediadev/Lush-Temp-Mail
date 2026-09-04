@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-09-04 - mail_attachments_and_auto_forward
+- Added: attachment selection for standalone compose, reply, and forward flows with client/server size validation.
+- Added: admin rules for forwarding new mail from a selected alias to one external destination, including pause/delete actions and attachment-preserving delivery.
+- Added: idempotent forwarding delivery records with retry backoff and sent-mail audit rows.
+- Changed: modal backdrop uses a stable CSS blur layer to avoid local GPU compositing artifacts.
+- Deployment note: production Postfix `message_size_limit` is raised to 30 MB; application attachment input is limited to 18 MB to stay below common Gmail limits after MIME encoding.
+
 ### 2026-07-24 - fix_alias_sender_smtp_delivery
 - Fixed: composer keeps the selected alias in visible `From` and `Reply-To` headers while using the authenticated mailbox as the SMTP envelope sender.
 - Fixed: raw HTML gateway errors are replaced with a concise Vietnamese message instead of being rendered inside the composer.

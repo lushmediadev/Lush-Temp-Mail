@@ -922,6 +922,107 @@ body.detail-resizing * {
   font-weight: 700;
 }
 
+.forwarding-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.forwarding-badge-active {
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.forwarding-badge-paused {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #6b7280;
+}
+
+.forwarding-error {
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.compose-attachment-btn {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #4b5563;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 650;
+  transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.compose-attachment-btn:hover {
+  border-color: #ffb8a3;
+  background: #fff7f5;
+  color: #cc3f18;
+}
+
+.compose-attachment-list {
+  display: grid;
+  gap: 8px;
+}
+
+.compose-attachment-list.hidden {
+  display: none;
+}
+
+.compose-attachment-item {
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.compose-attachment-name {
+  overflow: hidden;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-attachment-size {
+  margin-top: 1px;
+  color: #9ca3af;
+  font-size: 11px;
+}
+
+.compose-attachment-remove {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #9ca3af;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.compose-attachment-remove:hover {
+  background: #fff0eb;
+  color: #e64a20;
+}
+
 .pagination-btn {
   min-width: 40px;
   height: 40px;
@@ -957,6 +1058,12 @@ body.detail-resizing * {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+.modal-backdrop {
+  background: rgba(15, 23, 42, 0.46);
+  -webkit-backdrop-filter: blur(8px) saturate(85%);
+  backdrop-filter: blur(8px) saturate(85%);
+}
 
 .detail-fade-in { animation: detailFadeIn 0.25s ease-out; }
 @keyframes detailFadeIn {

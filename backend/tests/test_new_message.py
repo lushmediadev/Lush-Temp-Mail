@@ -1,4 +1,5 @@
 from pathlib import Path
+import base64
 
 import pytest
 from fastapi import HTTPException
@@ -74,6 +75,50 @@ def test_standalone_send_endpoint_hides_delivery_internals(monkeypatch):
     assert "<html>" not in raised.value.detail
 
 
+def test_standalone_send_decodes_and_stores_attachments(monkeypatch):
+    captured = {}
+
+    def fake_send_composed_message(**kwargs):
+        captured.update(kwargs)
+        return {
+            "mode": "send",
+            "to": ["receiver@example.com"],
+            "cc": [],
+            "subject": "Có tệp",
+            "from": "sales@lushmedia.net",
+            "message_id": "<attachment@lushmedia.net>",
+            "attachment_count": 1,
+        }
+
+    def fake_store_sent_message(payload):
+        captured["stored"] = payload
+        return {"id": 43}
+
+    monkeypatch.setattr(main, "send_composed_message", fake_send_composed_message)
+    monkeypatch.setattr(main.db, "store_sent_message", fake_store_sent_message)
+
+    result = main.send_new_message(
+        {
+            "from_alias": "sales@lushmedia.net",
+            "to": "receiver@example.com",
+            "subject": "Có tệp",
+            "body": "Nội dung",
+            "attachments": [
+                {
+                    "filename": "invoice.pdf",
+                    "content_type": "application/pdf",
+                    "content_base64": base64.b64encode(b"%PDF-test").decode(),
+                }
+            ],
+        },
+        _session={"user_id": 1, "role": "admin"},
+    )
+
+    assert result["ok"] is True
+    assert captured["attachments"][0]["content"] == b"%PDF-test"
+    assert captured["stored"]["attachments"][0]["filename"] == "invoice.pdf"
+
+
 def test_admin_ui_exposes_new_message_composer():
     index_html = (ROOT / "index.html").read_text(encoding="utf-8")
     app_js = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -81,10 +126,15 @@ def test_admin_ui_exposes_new_message_composer():
     assert 'id="newMessageBtn"' in index_html
     assert 'id="newMessageModal"' in index_html
     assert 'id="newMessageFrom"' in index_html
-    assert "app.js?v=20260724-lushmail-compose-sender-fix" in index_html
+    assert "app.js?v=20260904-mail-attachments-forwarding" in index_html
     assert "function openNewMessageComposer()" in app_js
     assert "function sendNewMessage(event)" in app_js
     assert "'/api/messages/send'" in app_js
     assert "from_alias: dom.newMessageFrom.value" in app_js
+    assert 'id="newMessageAttachmentInput"' in index_html
+    assert 'class="absolute inset-0 modal-backdrop"' in index_html
+    assert "serializeAttachmentFiles" in app_js
+    assert 'id="forwardingTabBtn"' in index_html
+    assert "'/api/forwarding-rules'" in app_js
     assert "Máy chủ tạm thời không phản hồi. Vui lòng thử lại." in app_js
     assert "return 'Mới';" in app_js

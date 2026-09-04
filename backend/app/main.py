@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
 import logging
 import sqlite3
@@ -18,13 +20,68 @@ from .auth import clear_session, create_session, require_admin, require_session,
 from .config import settings
 from .events import inbox_events
 from .imap_sync import MailSyncService, fetch_message_attachment_payloads
-from .mailer import send_composed_message
+from .mailer import (
+    MAX_ATTACHMENT_TOTAL_BYTES,
+    parse_address_list,
+    send_composed_message,
+    validate_outgoing_attachments,
+)
 from .translator import DEFAULT_TARGET_LANGUAGE, translate_message
-from .utils import iso_in_hours, is_valid_local_part, normalize_address, normalize_lookup_address, random_local_part
+from .utils import iso_in_hours, is_valid_local_part, normalize_address, normalize_lookup_address, random_local_part, split_address
 
 
 mail_sync = MailSyncService()
 logger = logging.getLogger("lush_temp_mail.api")
+
+
+def _decode_outgoing_attachments(value: Any) -> list[dict[str, Any]]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("Danh sách tệp đính kèm không hợp lệ")
+
+    decoded: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError("Tệp đính kèm không hợp lệ")
+        filename = str(item.get("filename") or f"attachment-{index + 1}")
+        filename = filename.replace("\\", "/").split("/")[-1].replace("\r", "").replace("\n", "")[:255]
+        encoded = str(item.get("content_base64") or "")
+        if not encoded or len(encoded) > (MAX_ATTACHMENT_TOTAL_BYTES * 2):
+            raise ValueError("Nội dung tệp đính kèm không hợp lệ")
+        try:
+            content = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise ValueError(f"Không đọc được tệp {filename}") from error
+        content_type = str(item.get("content_type") or "application/octet-stream")
+        content_type = content_type.replace("\r", "").replace("\n", "")[:255]
+        decoded.append(
+            {
+                "index": index,
+                "filename": filename,
+                "content_type": content_type,
+                "disposition": "attachment",
+                "size_bytes": len(content),
+                "content": content,
+            }
+        )
+    return validate_outgoing_attachments(decoded)
+
+
+def _normalize_forward_target(value: Any) -> str:
+    addresses = parse_address_list(str(value or ""))
+    if len(addresses) != 1 or "@" not in addresses[0]:
+        raise ValueError("Email nhận chuyển tiếp không hợp lệ")
+    target = normalize_address(addresses[0])
+    try:
+        local_part, domain = split_address(target)
+    except ValueError as error:
+        raise ValueError("Email nhận chuyển tiếp không hợp lệ") from error
+    if not is_valid_local_part(local_part) or not domain or "." not in domain:
+        raise ValueError("Email nhận chuyển tiếp không hợp lệ")
+    if domain == settings.mail_domain:
+        raise ValueError(f"Email nhận chuyển tiếp phải nằm ngoài @{settings.mail_domain} để tránh vòng lặp")
+    return target
 
 
 def _expires_at_from_hours(hours: int | None) -> str | None:
@@ -378,6 +435,45 @@ def delete_excluded_alias(excluded_alias_id: int, _session=Depends(require_admin
     return {"item": item}
 
 
+@app.get("/api/forwarding-rules")
+def list_forwarding_rules(_session=Depends(require_admin)) -> dict[str, Any]:
+    return {"items": db.list_forwarding_rules()}
+
+
+@app.post("/api/forwarding-rules")
+def create_forwarding_rule(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    try:
+        source_address = normalize_lookup_address(payload.get("source_address") or "", settings.mail_domain)
+        target_address = _normalize_forward_target(payload.get("target_address"))
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if source_address == target_address:
+        raise HTTPException(status_code=400, detail="Alias nguồn và email nhận chuyển tiếp không được trùng nhau")
+    return {"item": db.create_forwarding_rule(source_address, target_address)}
+
+
+@app.patch("/api/forwarding-rules/{rule_id}")
+def update_forwarding_rule(
+    rule_id: int,
+    payload: dict[str, Any] = Body(...),
+    _session=Depends(require_admin),
+) -> dict[str, Any]:
+    if "enabled" not in payload or not isinstance(payload.get("enabled"), bool):
+        raise HTTPException(status_code=400, detail="Thiếu trạng thái chuyển tiếp")
+    item = db.update_forwarding_rule(rule_id, enabled=bool(payload.get("enabled")))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Quy tắc chuyển tiếp không tồn tại")
+    return {"item": item}
+
+
+@app.delete("/api/forwarding-rules/{rule_id}")
+def delete_forwarding_rule(rule_id: int, _session=Depends(require_admin)) -> dict[str, Any]:
+    item = db.delete_forwarding_rule(rule_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Quy tắc chuyển tiếp không tồn tại")
+    return {"item": item}
+
+
 @app.get("/api/messages")
 def list_messages(
     alias_id: int | None = Query(default=None),
@@ -516,7 +612,9 @@ def translate_email(message_id: int, payload: dict[str, Any] = Body(default={}),
 
 @app.post("/api/messages/send")
 def send_new_message(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
+    attachments: list[dict[str, Any]] = []
     try:
+        attachments = _decode_outgoing_attachments(payload.get("attachments"))
         result = send_composed_message(
             source_message={},
             mode="send",
@@ -525,7 +623,7 @@ def send_new_message(payload: dict[str, Any] = Body(...), _session=Depends(requi
             cc_value=payload.get("cc", ""),
             subject=payload.get("subject", ""),
             body=payload.get("body", ""),
-            attachments=[],
+            attachments=attachments,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
@@ -545,7 +643,7 @@ def send_new_message(payload: dict[str, Any] = Body(...), _session=Depends(requi
             "cc": result["cc"],
             "subject": result["subject"],
             "body": payload.get("body", ""),
-            "attachments": [],
+            "attachments": attachments,
             "message_id": result["message_id"],
         }
     )
@@ -558,9 +656,11 @@ def send_message(message_id: int, payload: dict[str, Any] = Body(...), _session=
     if message is None:
         raise HTTPException(status_code=404, detail="Email không tồn tại")
     mode = (payload.get("mode") or "reply").strip().lower()
-    attachments = _resolve_message_attachments(message) if mode == "forward" else []
+    original_attachments = _resolve_message_attachments(message) if mode == "forward" else []
 
     try:
+        uploaded_attachments = _decode_outgoing_attachments(payload.get("attachments"))
+        attachments = validate_outgoing_attachments(original_attachments + uploaded_attachments)
         result = send_composed_message(
             source_message=message,
             mode=mode,

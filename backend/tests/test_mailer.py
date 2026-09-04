@@ -78,3 +78,49 @@ def test_sender_alias_must_use_configured_mail_domain(monkeypatch):
             subject="Test",
             body="Test body",
         )
+
+
+def test_attachment_total_limit_is_enforced(monkeypatch):
+    monkeypatch.setattr(mailer, "MAX_ATTACHMENT_TOTAL_BYTES", 4)
+
+    with pytest.raises(ValueError, match="18 MB"):
+        mailer.validate_outgoing_attachments(
+            [
+                {
+                    "filename": "video.mp4",
+                    "content_type": "video/mp4",
+                    "content": b"12345",
+                }
+            ]
+        )
+
+
+def test_automatic_forward_preserves_source_context(monkeypatch):
+    captured = {}
+
+    def fake_send_composed_message(**kwargs):
+        captured.update(kwargs)
+        return {"ok": True}
+
+    monkeypatch.setattr(mailer, "send_composed_message", fake_send_composed_message)
+    result = mailer.send_automatic_forward(
+        source_message={
+            "recipient_address": "lush@lushmedia.net",
+            "from_name": "OpenAI Support",
+            "from_email": "support@example.com",
+            "subject": "Appeal result",
+            "text_body": "Approved",
+            "received_at": "2026-09-04T12:00:00+00:00",
+            "html_body": "<p>Approved</p>",
+        },
+        target_address="owner@gmail.com",
+        attachments=[{"filename": "result.pdf", "content": b"pdf"}],
+    )
+
+    assert result == {"ok": True}
+    assert captured["from_value"] == "lush@lushmedia.net"
+    assert captured["to_value"] == "owner@gmail.com"
+    assert captured["subject"] == "Fwd: Appeal result"
+    assert "OpenAI Support <support@example.com>" in captured["body"]
+    assert captured["attachments"][0]["filename"] == "result.pdf"
+    assert captured["html_body"] == "<p>Approved</p>"
