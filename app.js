@@ -213,7 +213,8 @@ async function bootstrapSession() {
     }
     showApp();
     startAdminEventStream();
-    await refreshData({ silent: true, forceSync: true });
+    await refreshData({ silent: true, forceSync: false });
+    refreshData({ silent: true, forceSync: true }).catch(handleError);
     restartAutoRefresh();
     restartRelativeTimeTicker();
   } catch {
@@ -239,7 +240,8 @@ async function onLoginSubmit(event) {
     }
     showApp();
     startAdminEventStream();
-    await refreshData({ silent: true, forceSync: true });
+    await refreshData({ silent: true, forceSync: false });
+    refreshData({ silent: true, forceSync: true }).catch(handleError);
     restartAutoRefresh();
     restartRelativeTimeTicker();
     showToast('Đăng nhập thành công');
@@ -718,8 +720,8 @@ function renderMessages() {
     const selectedCls = isMessageSelected(message.id) ? 'selected' : '';
     const unreadCls = message.unread ? 'unread' : '';
     const recentCls = isRecentMessage(message.id) ? 'recent' : '';
-    const hasOtp = Boolean(message.extracted_otps?.length);
-    const hasLinks = Boolean(message.extracted_links?.length);
+    const hasOtp = Boolean(message.has_otps || message.extracted_otps?.length);
+    const hasLinks = Boolean(message.has_links || message.extracted_links?.length);
     const newBadge = isRecentMessage(message.id) ? '<span class="mail-badge mail-badge-new">Email mới</span>' : '';
     const otpBadge = hasOtp ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold">OTP</span>' : '';
     const linkBadge = hasLinks ? '<span class="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Link</span>' : '';
@@ -809,7 +811,7 @@ function renderSentMessageRow(message) {
   const subject = escapeHtml(message.subject || '(No subject)');
   const snippet = escapeHtml(message.snippet || message.text_body || '');
   const avatar = getAvatarPresentation(message);
-  const attachmentCount = Array.isArray(message.attachments) ? message.attachments.length : 0;
+  const attachmentCount = Number(message.attachment_count || (Array.isArray(message.attachments) ? message.attachments.length : 0));
   const modeLabel = getSentModeLabel(message.mode);
   const attachmentBadge = attachmentCount
     ? `<span class="mail-badge mail-badge-neutral"><i data-lucide="paperclip" class="w-3 h-3"></i>${attachmentCount} tệp</span>`
@@ -1864,25 +1866,28 @@ async function sendCompose() {
       sendButton.textContent = 'Đang gửi...';
     }
 
-    await api(`/api/messages/${draft.messageId}/send`, {
-      method: 'POST',
-      body: JSON.stringify({
-        mode: draft.mode,
-        to: draft.to,
-        cc: draft.cc,
-        subject: draft.subject,
-        body: draft.body,
-        attachments: await serializeAttachmentFiles(draft.attachments || []),
-      }),
-    });
-
+    const attachments = await serializeAttachmentFiles(draft.attachments || []);
+    const payload = {
+      mode: draft.mode,
+      to: draft.to,
+      cc: draft.cc,
+      subject: draft.subject,
+      body: draft.body,
+      attachments,
+    };
     state.composeDraft = null;
     if (state.selectedMessageCache) {
       renderDetail(state.selectedMessageCache);
     }
+    showToast('Đang gửi email...');
+    await api(`/api/messages/${draft.messageId}/send`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
     showToast(draft.mode === 'reply' ? 'Đã gửi trả lời' : 'Đã gửi chuyển tiếp');
   } catch (error) {
-    handleError(error);
+    showToast(error.message || 'Gửi email thất bại');
   } finally {
     if (sendButton) {
       sendButton.disabled = false;
@@ -1949,25 +1954,27 @@ async function sendNewMessage(event) {
   dom.sendNewMessageBtn.disabled = true;
 
   try {
+    const attachments = await serializeAttachmentFiles(state.newMessageAttachments);
+    const payload = {
+      from_alias: dom.newMessageFrom.value,
+      to: dom.newMessageTo.value,
+      cc: dom.newMessageCc.value,
+      subject: dom.newMessageSubject.value,
+      body: dom.newMessageBody.value,
+      attachments,
+    };
+    closeNewMessageComposer();
+    showToast('Đang gửi email...');
     await api('/api/messages/send', {
       method: 'POST',
-      body: JSON.stringify({
-        from_alias: dom.newMessageFrom.value,
-        to: dom.newMessageTo.value,
-        cc: dom.newMessageCc.value,
-        subject: dom.newMessageSubject.value,
-        body: dom.newMessageBody.value,
-        attachments: await serializeAttachmentFiles(state.newMessageAttachments),
-      }),
+      body: JSON.stringify(payload),
     });
     showToast('Đã gửi email');
-    closeNewMessageComposer();
     if (state.currentFilter === 'sent') {
       loadMessages({ preserveDetail: true }).catch(handleError);
     }
   } catch (error) {
-    dom.newMessageError.textContent = error.message || 'Gửi email thất bại';
-    dom.newMessageError.classList.remove('hidden');
+    showToast(error.message || 'Gửi email thất bại');
   } finally {
     dom.sendNewMessageBtn.disabled = false;
   }
@@ -2595,8 +2602,8 @@ function buildMessageListSignature(messages) {
     message.kind || 'inbox',
     formatAddressList(message.to, ''),
     formatAddressList(message.cc, ''),
-    (message.extracted_otps || []).length,
-    (message.extracted_links || []).length,
+    message.has_otps ? 1 : (message.extracted_otps || []).length,
+    message.has_links ? 1 : (message.extracted_links || []).length,
   ].join('|')).join('~');
 }
 

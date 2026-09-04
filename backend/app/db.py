@@ -416,6 +416,32 @@ def row_to_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
     }
 
 
+def row_to_sent_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    subject = decode_mime_text(row["subject"] or "")
+    text_body = row["text_body"] or ""
+    attachments = json.loads(row["attachments_json"] or "[]")
+    return {
+        "id": row["id"],
+        "kind": "sent",
+        "source_message_id": row["source_message_id"],
+        "mode": row["mode"],
+        "from_email": row["from_email"],
+        "to": json.loads(row["to_json"] or "[]"),
+        "cc": json.loads(row["cc_json"] or "[]"),
+        "subject": subject,
+        "snippet": text_body[:240],
+        "attachment_count": len(attachments),
+        "message_id": row["message_id"],
+        "sent_at": row["sent_at"],
+        "received_at": row["sent_at"],
+        "unread": False,
+        "important": False,
+        "suppressed": bool(row["suppressed"]),
+    }
+
+
 def row_to_attachment(row: sqlite3.Row | None, *, include_content: bool = False) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -1281,12 +1307,29 @@ def _build_message_scope(
 
 def list_messages(*, alias_id: int | None = None, filter_name: str = "all", search: str = "", limit: int = 200) -> list[dict[str, Any]]:
     scope_query, values = _build_message_scope(alias_id=alias_id, filter_name=filter_name, search=search)
-    query = f"SELECT messages.* {scope_query}"
+    query = f"""
+        SELECT
+            messages.id,
+            messages.alias_id,
+            messages.recipient_address,
+            messages.from_name,
+            messages.from_email,
+            messages.subject,
+            messages.snippet,
+            messages.received_at,
+            messages.mailbox_received_at,
+            messages.ingested_at,
+            messages.unread,
+            messages.important,
+            CASE WHEN messages.extracted_links_json != '[]' THEN 1 ELSE 0 END AS has_links,
+            CASE WHEN messages.extracted_otps_json != '[]' THEN 1 ELSE 0 END AS has_otps
+        {scope_query}
+    """
     query += " ORDER BY received_at DESC LIMIT ?"
     values.append(limit)
     with _connect() as conn:
         rows = conn.execute(query, values).fetchall()
-    return [row_to_message(row) for row in rows]
+    return [row_to_message_summary(row) for row in rows]
 
 
 def delete_messages_by_scope(*, alias_id: int | None = None, filter_name: str = "all", search: str = "") -> dict[str, Any]:
@@ -1368,7 +1411,7 @@ def list_sent_messages(*, search: str = "", limit: int = 200) -> list[dict[str, 
     values.append(limit)
     with _connect() as conn:
         rows = conn.execute(query, values).fetchall()
-    return [row_to_sent_message(row) for row in rows]
+    return [row_to_sent_message_summary(row) for row in rows]
 
 
 def delete_sent_messages_by_scope(*, search: str = "") -> dict[str, Any]:

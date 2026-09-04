@@ -1,5 +1,11 @@
 # Changelog
 
+### 2026-09-04 - mail_performance_bootstrap
+- Changed: initial login renders the cached mail list before running the slower IMAP sync in the background.
+- Changed: inbox and sent list APIs return summary fields only; full message bodies and attachment payloads load on detail view.
+- Changed: versioned static assets use long-lived browser caching while HTML remains no-cache.
+- Changed: compose and reply/forward modals close after payload preparation while SMTP delivery continues and reports through toast status.
+
 ### 2026-09-04 - mail_attachments_and_auto_forward
 - Added: attachment selection for standalone compose, reply, and forward flows with client/server size validation.
 - Added: admin rules for forwarding new mail from a selected alias to one external destination, including pause/delete actions and attachment-preserving delivery.

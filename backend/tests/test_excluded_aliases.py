@@ -56,3 +56,22 @@ def test_creating_excluded_alias_hides_existing_messages(monkeypatch, tmp_path):
     assert db.list_messages(search="oldspam") == []
     alias = db.get_alias_by_address("oldspam@lushmedia.net")
     assert alias["message_count"] == 0
+
+
+def test_message_list_returns_summary_without_full_body(monkeypatch, tmp_path):
+    setup_temp_db(monkeypatch, tmp_path)
+    payload = message_payload("summary@lushmedia.net")
+    payload["text_body"] = "full text that belongs only in the detail view"
+    payload["html_body"] = "<html><body>large rendered body</body></html>"
+    payload["extracted_links"] = [{"url": "https://example.com", "text": "example"}]
+    payload["extracted_otps"] = [{"code": "123456"}]
+    db.store_message(payload)
+
+    item = db.list_messages(search="summary")[0]
+
+    assert item["snippet"] == "spam message"
+    assert item["has_links"] is True
+    assert item["has_otps"] is True
+    assert "text_body" not in item
+    assert "html_body" not in item
+    assert "raw_headers" not in item

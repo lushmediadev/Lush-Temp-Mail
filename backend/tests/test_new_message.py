@@ -126,7 +126,7 @@ def test_admin_ui_exposes_new_message_composer():
     assert 'id="newMessageBtn"' in index_html
     assert 'id="newMessageModal"' in index_html
     assert 'id="newMessageFrom"' in index_html
-    assert "app.js?v=20260904-mail-attachments-forwarding" in index_html
+    assert "app.js?v=20260904-mail-perf-v2" in index_html
     assert "function openNewMessageComposer()" in app_js
     assert "function sendNewMessage(event)" in app_js
     assert "'/api/messages/send'" in app_js
