@@ -38,7 +38,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <link rel="stylesheet" href="style.css?v=20260904-mail-attachments-forwarding">
+  <link rel="stylesheet" href="style.css?v=20260720-detail-splitter-drag">
 </head>
 <body class="font-inter antialiased bg-white text-gray-800 min-h-screen">
   <div id="loginPage" class="min-h-screen flex items-center justify-center relative overflow-hidden">
@@ -352,7 +352,7 @@
     </div>
 
     <div id="newMessageModal" class="fixed inset-0 z-[70] hidden items-center justify-center px-4">
-      <div class="absolute inset-0 modal-backdrop" data-new-message-close="true"></div>
+      <div class="absolute inset-0 bg-gray-950/45 backdrop-blur-sm" data-new-message-close="true"></div>
       <form id="newMessageForm" class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
         <div class="flex items-center justify-between gap-4 border-b border-gray-100 px-6 py-5">
           <div>
@@ -423,7 +423,7 @@
     </div>
 
     <div id="userModal" class="fixed inset-0 z-[70] hidden items-center justify-center px-4">
-      <div class="absolute inset-0 modal-backdrop" data-user-modal-close="true"></div>
+      <div class="absolute inset-0 bg-gray-950/45 backdrop-blur-sm" data-user-modal-close="true"></div>
       <form id="userForm" class="relative w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl p-6">
         <div class="flex items-center justify-between gap-4 mb-5">
           <h3 id="userModalTitle" class="font-fustat text-xl font-bold text-gray-900">Tạo user</h3>

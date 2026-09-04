@@ -4,7 +4,7 @@
 - Added: attachment selection for standalone compose, reply, and forward flows with client/server size validation.
 - Added: admin rules for forwarding new mail from a selected alias to one external destination, including pause/delete actions and attachment-preserving delivery.
 - Added: idempotent forwarding delivery records with retry backoff and sent-mail audit rows.
-- Changed: modal backdrop uses a stable CSS blur layer to avoid local GPU compositing artifacts.
+- Changed: modal backdrop remains on the existing Tailwind blur classes; no application-level overlay change is required.
 - Deployment note: production Postfix `message_size_limit` is raised to 30 MB; application attachment input is limited to 18 MB to stay below common Gmail limits after MIME encoding.
 
 ### 2026-07-24 - fix_alias_sender_smtp_delivery

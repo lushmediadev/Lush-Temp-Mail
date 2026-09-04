@@ -132,7 +132,6 @@ def test_admin_ui_exposes_new_message_composer():
     assert "'/api/messages/send'" in app_js
     assert "from_alias: dom.newMessageFrom.value" in app_js
     assert 'id="newMessageAttachmentInput"' in index_html
-    assert 'class="absolute inset-0 modal-backdrop"' in index_html
     assert "serializeAttachmentFiles" in app_js
     assert 'id="forwardingTabBtn"' in index_html
     assert "'/api/forwarding-rules'" in app_js

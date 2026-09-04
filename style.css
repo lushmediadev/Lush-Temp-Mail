@@ -1059,12 +1059,6 @@ body.detail-resizing * {
 ::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 99px; }
 ::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
 
-.modal-backdrop {
-  background: rgba(15, 23, 42, 0.46);
-  -webkit-backdrop-filter: blur(8px) saturate(85%);
-  backdrop-filter: blur(8px) saturate(85%);
-}
-
 .detail-fade-in { animation: detailFadeIn 0.25s ease-out; }
 @keyframes detailFadeIn {
   from { opacity: 0; transform: translateY(8px); }
