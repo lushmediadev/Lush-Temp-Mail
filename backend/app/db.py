@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 import sqlite3
+from email.utils import getaddresses
 from typing import Any
 
 from .config import settings
@@ -240,6 +241,36 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS message_recipients (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL,
+                recipient_address TEXT NOT NULL,
+                alias_id INTEGER,
+                UNIQUE(message_id, recipient_address),
+                FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE,
+                FOREIGN KEY(alias_id) REFERENCES aliases(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_message_recipients_address
+            ON message_recipients(recipient_address)
+            """
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO message_recipients(message_id, recipient_address, alias_id)
+            SELECT id, recipient_address, alias_id
+            FROM messages
+            WHERE alias_id IS NOT NULL
+            """
+        )
+        _backfill_message_recipient_maps(conn)
+        for alias_row in conn.execute("SELECT id FROM aliases").fetchall():
+            _refresh_alias_stats(conn, alias_row["id"])
         conn.execute("UPDATE messages SET mailbox_received_at = COALESCE(mailbox_received_at, received_at) WHERE mailbox_received_at IS NULL")
         conn.execute("UPDATE messages SET ingested_at = COALESCE(ingested_at, received_at) WHERE ingested_at IS NULL")
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -436,6 +467,7 @@ def row_to_message_summary(row: sqlite3.Row | None) -> dict[str, Any] | None:
     subject = decode_mime_text(row["subject"] or "")
     return {
         "id": row["id"],
+        "message_id": row["message_id"],
         "alias_id": row["alias_id"],
         "recipient_address": row["recipient_address"],
         "from_name": from_name,
@@ -864,22 +896,84 @@ def _refresh_alias_stats(conn: sqlite3.Connection, alias_id: int) -> None:
         UPDATE aliases
         SET
             last_message_at = (
-                SELECT MAX(received_at) FROM messages WHERE alias_id = aliases.id AND suppressed = 0
+                SELECT MAX(messages.received_at)
+                FROM messages
+                JOIN message_recipients ON message_recipients.message_id = messages.id
+                WHERE message_recipients.alias_id = aliases.id AND messages.suppressed = 0
             ),
             last_sender = (
-                SELECT COALESCE(from_email, from_name, '')
+                SELECT COALESCE(messages.from_email, messages.from_name, '')
                 FROM messages
-                WHERE alias_id = aliases.id AND suppressed = 0
-                ORDER BY received_at DESC, id DESC
+                JOIN message_recipients ON message_recipients.message_id = messages.id
+                WHERE message_recipients.alias_id = aliases.id AND messages.suppressed = 0
+                ORDER BY messages.received_at DESC, messages.id DESC
                 LIMIT 1
             ),
             message_count = (
-                SELECT COUNT(*) FROM messages WHERE alias_id = aliases.id AND suppressed = 0
+                SELECT COUNT(DISTINCT messages.id)
+                FROM messages
+                JOIN message_recipients ON message_recipients.message_id = messages.id
+                WHERE message_recipients.alias_id = aliases.id AND messages.suppressed = 0
             )
         WHERE id = ?
         """,
         (alias_id,),
     )
+
+
+def _ensure_alias_for_connection(conn: sqlite3.Connection, address: str) -> sqlite3.Row | None:
+    normalized = normalize_address(address)
+    try:
+        local_part, domain = split_address(normalized)
+    except ValueError:
+        return None
+    now_iso = utc_now_iso()
+    conn.execute(
+        """
+        INSERT INTO aliases(address, local_part, domain, source, status, created_at, expires_at)
+        VALUES (?, ?, ?, 'inbound', 'active', ?, ?)
+        ON CONFLICT(address) DO NOTHING
+        """,
+        (normalized, local_part, domain, now_iso, _default_alias_expires_at()),
+    )
+    return conn.execute("SELECT * FROM aliases WHERE address = ?", (normalized,)).fetchone()
+
+
+def _backfill_message_recipient_maps(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, recipient_address, raw_headers_json FROM messages"
+    ).fetchall()
+    domain_suffix = f"@{settings.mail_domain.lower()}"
+    central_address = normalize_address(settings.central_mailbox)
+    for row in rows:
+        addresses: list[str] = [normalize_address(row["recipient_address"])]
+        try:
+            headers = json.loads(row["raw_headers_json"] or "{}")
+        except (TypeError, ValueError):
+            headers = {}
+        header_values = [
+            headers.get("x_original_to", ""),
+            headers.get("delivered_to", ""),
+            headers.get("to", ""),
+            headers.get("cc", ""),
+        ]
+        for _display_name, address in getaddresses([str(value or "") for value in header_values]):
+            candidate = normalize_address(address)
+            if candidate.endswith(domain_suffix) and candidate != central_address and candidate not in addresses:
+                addresses.append(candidate)
+        for address in addresses:
+            alias = conn.execute("SELECT id, status FROM aliases WHERE address = ?", (address,)).fetchone()
+            if alias is None:
+                alias = _ensure_alias_for_connection(conn, address)
+            if alias is None or alias["status"] != "active":
+                continue
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO message_recipients(message_id, recipient_address, alias_id)
+                VALUES (?, ?, ?)
+                """,
+                (row["id"], address, alias["id"]),
+            )
 
 
 def ensure_alias(
@@ -1204,16 +1298,16 @@ def _enqueue_forwarding_deliveries(
     conn: sqlite3.Connection,
     *,
     message_id: int,
-    recipient_address: str,
+    recipient_addresses: list[str],
 ) -> None:
     now = utc_now_iso()
-    recipient = normalize_address(recipient_address)
+    recipients = {normalize_address(address) for address in recipient_addresses if address}
     rules = conn.execute(
         "SELECT id, source_address, source_addresses_json, target_address, target_addresses_json FROM forwarding_rules WHERE enabled = 1"
     ).fetchall()
     for rule in rules:
         sources = _decode_forwarding_addresses(rule["source_addresses_json"], rule["source_address"])
-        if recipient not in sources:
+        if not recipients.intersection(sources):
             continue
         targets = _decode_forwarding_addresses(rule["target_addresses_json"], rule["target_address"])
         if not targets:
@@ -1350,17 +1444,27 @@ def _default_alias_expires_at() -> str | None:
 
 
 def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
-    recipient_address = normalize_address(payload["recipient_address"])
-    if is_excluded_alias(recipient_address):
+    raw_recipients = payload.get("recipient_addresses") or [payload["recipient_address"]]
+    recipient_addresses: list[str] = []
+    for raw_recipient in raw_recipients:
+        recipient = normalize_address(str(raw_recipient))
+        if recipient and recipient not in recipient_addresses and not is_excluded_alias(recipient):
+            recipient_addresses.append(recipient)
+    if not recipient_addresses:
         return None
 
     imap_mailbox = str(payload.get("imap_mailbox") or settings.imap_username or settings.central_mailbox or "default")
-    alias = get_alias_by_address(recipient_address)
-    if alias is None:
-        alias = ensure_alias(recipient_address, source="inbound", expires_at=_default_alias_expires_at())
-
-    if alias["status"] != "active":
+    recipient_aliases: list[tuple[str, dict[str, Any]]] = []
+    for recipient_address in recipient_addresses:
+        alias = get_alias_by_address(recipient_address)
+        if alias is None:
+            alias = ensure_alias(recipient_address, source="inbound", expires_at=_default_alias_expires_at())
+        if alias["status"] == "active":
+            recipient_aliases.append((recipient_address, alias))
+    if not recipient_aliases:
         return None
+
+    recipient_address, primary_alias = recipient_aliases[0]
 
     attachment_payloads = payload.get("attachment_payloads", [])
 
@@ -1378,7 +1482,7 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
                 imap_mailbox,
                 payload["imap_uid"],
                 payload.get("message_id", ""),
-                alias["id"],
+                primary_alias["id"],
                 recipient_address,
                 payload.get("from_name", ""),
                 payload.get("from_email", ""),
@@ -1395,17 +1499,26 @@ def store_message(payload: dict[str, Any]) -> dict[str, Any] | None:
                 payload.get("ingested_at") or utc_now_iso(),
             ),
         )
-        _refresh_alias_stats(conn, alias["id"])
         row = conn.execute(
             "SELECT * FROM messages WHERE imap_mailbox = ? AND imap_uid = ?",
             (imap_mailbox, payload["imap_uid"]),
         ).fetchone()
+        if row is not None:
+            for recipient_address, alias in recipient_aliases:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO message_recipients(message_id, recipient_address, alias_id)
+                    VALUES (?, ?, ?)
+                    """,
+                    (row["id"], recipient_address, alias["id"]),
+                )
+                _refresh_alias_stats(conn, alias["id"])
         if row is not None and cursor.rowcount > 0:
             _store_attachment_payloads(conn, row["id"], attachment_payloads)
             _enqueue_forwarding_deliveries(
                 conn,
                 message_id=row["id"],
-                recipient_address=recipient_address,
+                recipient_addresses=[address for address, _alias in recipient_aliases],
             )
     return row_to_message(row)
 
@@ -1424,7 +1537,7 @@ def _build_message_scope(
     """
     values: list[Any] = []
     if alias_id is not None:
-        query += " AND alias_id = ?"
+        query += " AND EXISTS (SELECT 1 FROM message_recipients WHERE message_recipients.message_id = messages.id AND message_recipients.alias_id = ?)"
         values.append(alias_id)
     if filter_name == "unread":
         query += " AND unread = 1"
@@ -1439,6 +1552,12 @@ def _build_message_scope(
         query += """
             AND (
                 LOWER(COALESCE(messages.recipient_address, '')) LIKE ?
+                OR EXISTS (
+                    SELECT 1
+                    FROM message_recipients AS search_recipients
+                    WHERE search_recipients.message_id = messages.id
+                      AND LOWER(search_recipients.recipient_address) LIKE ?
+                )
                 OR LOWER(COALESCE(aliases.address, '')) LIKE ?
                 OR LOWER(COALESCE(aliases.local_part, '')) LIKE ?
                 OR LOWER(COALESCE(subject, '')) LIKE ?
@@ -1447,7 +1566,7 @@ def _build_message_scope(
                 OR LOWER(COALESCE(snippet, '')) LIKE ?
             )
         """
-        values.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern])
+        values.extend([pattern, pattern, pattern, pattern, pattern, pattern, pattern, pattern])
     return query, values
 
 
@@ -1456,6 +1575,7 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
     query = f"""
         SELECT
             messages.id,
+            messages.message_id,
             messages.alias_id,
             messages.recipient_address,
             messages.from_name,
@@ -1475,7 +1595,18 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
     values.append(limit)
     with _connect() as conn:
         rows = conn.execute(query, values).fetchall()
-    return [row_to_message_summary(row) for row in rows]
+    items: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in rows:
+        item = row_to_message_summary(row)
+        if item is None:
+            continue
+        key = item.get("message_id") or f"{row['imap_mailbox']}:{row['imap_uid']}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        items.append(item)
+    return items
 
 
 def delete_messages_by_scope(*, alias_id: int | None = None, filter_name: str = "all", search: str = "") -> dict[str, Any]:
@@ -1579,6 +1710,7 @@ def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
             """
             SELECT
                 messages.id,
+                messages.message_id,
                 messages.alias_id,
                 messages.recipient_address,
                 messages.from_name,
@@ -1595,13 +1727,29 @@ def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
             FROM messages
             LEFT JOIN aliases ON aliases.id = messages.alias_id
             WHERE messages.suppressed = 0
-              AND messages.recipient_address = ?
+              AND EXISTS (
+                SELECT 1
+                FROM message_recipients AS recipient_map
+                WHERE recipient_map.message_id = messages.id
+                  AND recipient_map.recipient_address = ?
+              )
               AND COALESCE(aliases.status, 'active') != 'deleted'
             ORDER BY messages.received_at DESC
             """,
             (normalize_address(recipient_address),),
         ).fetchall()
-    return [row_to_message_summary(row) for row in rows]
+    items: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for row in rows:
+        item = row_to_message_summary(row)
+        if item is None:
+            continue
+        key = item.get("message_id") or f"{row['id']}"
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        items.append(item)
+    return items
 
 
 def list_recent_message_timings(*, limit: int = 20) -> list[dict[str, Any]]:
@@ -1712,7 +1860,12 @@ def get_message_for_address(message_id: int, recipient_address: str) -> dict[str
             LEFT JOIN aliases ON aliases.id = messages.alias_id
             WHERE messages.id = ?
               AND messages.suppressed = 0
-              AND messages.recipient_address = ?
+              AND EXISTS (
+                SELECT 1
+                FROM message_recipients AS recipient_map
+                WHERE recipient_map.message_id = messages.id
+                  AND recipient_map.recipient_address = ?
+              )
               AND COALESCE(aliases.status, 'active') != 'deleted'
             """,
             (message_id, normalize_address(recipient_address)),

@@ -133,6 +133,20 @@ def test_forwarding_rule_supports_multiple_sources_and_targets(monkeypatch, tmp_
     assert updated["target_addresses"] == ["owner@gmail.com"]
 
 
+def test_one_message_is_available_for_all_recipient_aliases(monkeypatch, tmp_path):
+    _init_temp_db(monkeypatch, tmp_path)
+    payload = _message_payload(6, recipient="first@lushmedia.net")
+    payload["recipient_addresses"] = ["first@lushmedia.net", "second@lushmedia.net"]
+
+    stored = db.store_message(payload)
+
+    assert stored["recipient_address"] == "first@lushmedia.net"
+    second_inbox = db.list_public_messages(recipient_address="second@lushmedia.net")
+    assert len(second_inbox) == 1
+    assert second_inbox[0]["message_id"] == "<message-6@example.com>"
+    assert db.get_message_for_address(stored["id"], "second@lushmedia.net")["id"] == stored["id"]
+
+
 def test_forwarding_api_rejects_internal_destination():
     with pytest.raises(HTTPException) as raised:
         main.create_forwarding_rule(

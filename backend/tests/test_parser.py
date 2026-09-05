@@ -22,6 +22,22 @@ def test_extract_recipient_prefers_original_alias_over_central_mailbox():
     assert extract_recipient(message, "congmail.top", "contact@congmail.top") == "abc123@congmail.top"
 
 
+def test_extract_recipients_keeps_all_matching_aliases():
+    message = message_from_string(
+        "From: service@example.com\n"
+        "To: first@congmail.top, second@congmail.top\n"
+        "Delivered-To: contact@congmail.top\n"
+        "Subject: Test\n\n"
+        "Body"
+    )
+    from backend.app.parser import extract_recipients
+
+    assert extract_recipients(message, "congmail.top", "contact@congmail.top") == [
+        "first@congmail.top",
+        "second@congmail.top",
+    ]
+
+
 def test_extract_links_and_otps():
     text = "Ma xac nhan cua ban la 847291. Xac minh tai https://service.example/verify?token=abc"
     links = extract_links(text, "")

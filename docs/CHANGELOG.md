@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-09-05 - preserve_multiple_inbound_aliases
+- Fixed: one inbound message addressed to multiple LushMail aliases is indexed for every alias instead of always using the first address in the `To` header.
+- Added: recipient mapping migration backfills existing messages from stored headers and keeps public inbox lookup and forwarding rules alias-aware.
+- Changed: duplicate copies with the same `Message-ID` are collapsed in list views.
+
 ### 2026-09-05 - forwarding_rule_search_and_edit
 - Added: search for forwarding rules by source alias or destination address.
 - Changed: one rule accepts multiple source aliases and multiple external destinations separated by commas.
