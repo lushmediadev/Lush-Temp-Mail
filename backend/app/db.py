@@ -1738,6 +1738,7 @@ def delete_sent_messages_by_scope(*, search: str = "") -> dict[str, Any]:
 
 
 def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
+    normalized_recipient = normalize_address(recipient_address)
     with _connect() as conn:
         rows = conn.execute(
             """
@@ -1769,7 +1770,7 @@ def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
               AND COALESCE(aliases.status, 'active') != 'deleted'
             ORDER BY messages.received_at DESC
             """,
-            (normalize_address(recipient_address),),
+            (normalized_recipient,),
         ).fetchall()
     items: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
@@ -1782,6 +1783,8 @@ def list_public_messages(*, recipient_address: str) -> list[dict[str, Any]]:
             continue
         seen_keys.add(key)
         items.append(item)
+    for item in items:
+        item["recipient_address"] = normalized_recipient
     return items
 
 
@@ -1885,6 +1888,7 @@ def cache_message_attachment_payloads(message_id: int, attachments: list[dict[st
 
 
 def get_message_for_address(message_id: int, recipient_address: str) -> dict[str, Any] | None:
+    normalized_recipient = normalize_address(recipient_address)
     with _connect() as conn:
         row = conn.execute(
             """
@@ -1901,9 +1905,12 @@ def get_message_for_address(message_id: int, recipient_address: str) -> dict[str
               )
               AND COALESCE(aliases.status, 'active') != 'deleted'
             """,
-            (message_id, normalize_address(recipient_address)),
+            (message_id, normalized_recipient),
         ).fetchone()
-    return row_to_message(row)
+    message = row_to_message(row)
+    if message is not None:
+        message["recipient_address"] = normalized_recipient
+    return message
 
 
 def mark_message_read(message_id: int) -> dict[str, Any] | None:

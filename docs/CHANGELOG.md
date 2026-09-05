@@ -1,5 +1,8 @@
 # Changelog
 
+### 2026-09-05 - show_alias_context_in_public_inbox
+- Fixed: alias-specific inbox rows and details display the alias being viewed when one message was sent to multiple aliases.
+
 ### 2026-09-05 - show_multi_alias_rows_in_all_mail
 - Fixed: the admin all-mail list keeps one row per recipient alias instead of collapsing multi-alias messages globally by `Message-ID`.
 - Kept: each alias-specific inbox still collapses duplicate delivery copies to one message.

@@ -145,6 +145,7 @@ def test_one_message_is_available_for_all_recipient_aliases(monkeypatch, tmp_pat
     second_inbox = db.list_public_messages(recipient_address="second@lushmedia.net")
     assert len(second_inbox) == 1
     assert second_inbox[0]["message_id"] == "<message-6@example.com>"
+    assert second_inbox[0]["recipient_address"] == "second@lushmedia.net"
     assert db.get_message_for_address(stored["id"], "second@lushmedia.net")["id"] == stored["id"]
     all_inbox = db.list_messages()
     assert {(item["message_id"], item["recipient_address"]) for item in all_inbox} == {
