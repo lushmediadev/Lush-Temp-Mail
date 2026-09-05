@@ -161,6 +161,42 @@ def init_db() -> None:
             ON forwarding_deliveries(status, next_attempt_at);
             """
         )
+        forwarding_rule_columns = {row["name"] for row in conn.execute("PRAGMA table_info(forwarding_rules)").fetchall()}
+        if "source_addresses_json" not in forwarding_rule_columns:
+            conn.execute("ALTER TABLE forwarding_rules ADD COLUMN source_addresses_json TEXT NOT NULL DEFAULT '[]'")
+        if "target_addresses_json" not in forwarding_rule_columns:
+            conn.execute("ALTER TABLE forwarding_rules ADD COLUMN target_addresses_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute(
+            """
+            UPDATE forwarding_rules
+            SET source_addresses_json = json_array(source_address)
+            WHERE source_addresses_json = '[]' OR source_addresses_json IS NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE forwarding_rules
+            SET target_addresses_json = json_array(target_address)
+            WHERE target_addresses_json = '[]' OR target_addresses_json IS NULL
+            """
+        )
+        delivery_columns = {row["name"] for row in conn.execute("PRAGMA table_info(forwarding_deliveries)").fetchall()}
+        if "target_address" not in delivery_columns:
+            conn.execute("ALTER TABLE forwarding_deliveries ADD COLUMN target_address TEXT NOT NULL DEFAULT ''")
+        if "target_addresses_json" not in delivery_columns:
+            conn.execute("ALTER TABLE forwarding_deliveries ADD COLUMN target_addresses_json TEXT NOT NULL DEFAULT '[]'")
+        conn.execute(
+            """
+            UPDATE forwarding_deliveries
+            SET target_address = (
+                    SELECT target_address FROM forwarding_rules WHERE forwarding_rules.id = forwarding_deliveries.rule_id
+                ),
+                target_addresses_json = (
+                    SELECT target_addresses_json FROM forwarding_rules WHERE forwarding_rules.id = forwarding_deliveries.rule_id
+                )
+            WHERE target_address = '' OR target_addresses_json = '[]' OR target_addresses_json IS NULL
+            """
+        )
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "important" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
@@ -502,10 +538,20 @@ def row_to_forwarding_rule(row: sqlite3.Row | None) -> dict[str, Any] | None:
     if row is None:
         return None
     keys = set(row.keys())
+    source_addresses = _decode_forwarding_addresses(
+        row["source_addresses_json"] if "source_addresses_json" in keys else "",
+        row["source_address"],
+    )
+    target_addresses = _decode_forwarding_addresses(
+        row["target_addresses_json"] if "target_addresses_json" in keys else "",
+        row["target_address"],
+    )
     return {
         "id": row["id"],
-        "source_address": row["source_address"],
-        "target_address": row["target_address"],
+        "source_address": ", ".join(source_addresses),
+        "target_address": ", ".join(target_addresses),
+        "source_addresses": source_addresses,
+        "target_addresses": target_addresses,
         "enabled": bool(row["enabled"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -513,6 +559,32 @@ def row_to_forwarding_rule(row: sqlite3.Row | None) -> dict[str, Any] | None:
         "last_error": (row["last_error"] or "") if "last_error" in keys else "",
         "last_forwarded_at": row["last_forwarded_at"] if "last_forwarded_at" in keys else None,
     }
+
+
+def _decode_forwarding_addresses(value: Any, fallback: Any = "") -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, ValueError):
+        parsed = []
+    candidates = parsed if isinstance(parsed, list) else []
+    if not candidates:
+        candidates = str(fallback or "").split(",")
+    addresses: list[str] = []
+    for candidate in candidates:
+        address = normalize_address(str(candidate))
+        if address and address not in addresses:
+            addresses.append(address)
+    return addresses
+
+
+def _normalize_forwarding_values(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else str(value or "").split(",")
+    addresses: list[str] = []
+    for value_item in values:
+        address = normalize_address(str(value_item))
+        if address and address not in addresses:
+            addresses.append(address)
+    return sorted(addresses)
 
 
 def _attachment_metadata(attachment: dict[str, Any], fallback_index: int) -> dict[str, Any]:
@@ -991,10 +1063,9 @@ def delete_excluded_alias(excluded_alias_id: int) -> dict[str, Any] | None:
     return row_to_excluded_alias(row)
 
 
-def list_forwarding_rules() -> list[dict[str, Any]]:
+def list_forwarding_rules(search: str = "") -> list[dict[str, Any]]:
     with _connect() as conn:
-        rows = conn.execute(
-            """
+        query = """
             SELECT
                 rules.*,
                 (
@@ -1018,40 +1089,104 @@ def list_forwarding_rules() -> list[dict[str, Any]]:
                       AND deliveries.status = 'forwarded'
                 ) AS last_forwarded_at
             FROM forwarding_rules AS rules
-            ORDER BY rules.created_at DESC, rules.id DESC
-            """
-        ).fetchall()
+        """
+        values: list[Any] = []
+        if search.strip():
+            pattern = f"%{search.strip().lower()}%"
+            query += " WHERE LOWER(rules.source_address) LIKE ? OR LOWER(rules.target_address) LIKE ?"
+            values.extend([pattern, pattern])
+        query += " ORDER BY rules.created_at DESC, rules.id DESC"
+        rows = conn.execute(query, values).fetchall()
     return [row_to_forwarding_rule(row) for row in rows]
 
 
-def create_forwarding_rule(source_address: str, target_address: str) -> dict[str, Any]:
-    source = normalize_address(source_address)
-    target = normalize_address(target_address)
+def create_forwarding_rule(source_addresses: Any, target_addresses: Any) -> dict[str, Any]:
+    sources = _normalize_forwarding_values(source_addresses)
+    targets = _normalize_forwarding_values(target_addresses)
+    if not sources or not targets:
+        raise ValueError("Alias và email chuyển tiếp không được để trống")
+    source = ",".join(sources)
+    target = ",".join(targets)
     now = utc_now_iso()
     with _connect() as conn:
+        existing_rows = conn.execute(
+            "SELECT id, source_addresses_json, source_address FROM forwarding_rules"
+        ).fetchall()
+        source_set = set(sources)
+        for existing in existing_rows:
+            existing_sources = set(_decode_forwarding_addresses(existing["source_addresses_json"], existing["source_address"]))
+            if existing_sources.intersection(source_set) and existing["source_address"] != source:
+                raise ValueError("Một alias đã thuộc quy tắc chuyển tiếp khác")
         conn.execute(
             """
-            INSERT INTO forwarding_rules(source_address, target_address, enabled, created_at, updated_at)
-            VALUES (?, ?, 1, ?, ?)
+            INSERT INTO forwarding_rules(
+                source_address, target_address, source_addresses_json, target_addresses_json,
+                enabled, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 1, ?, ?)
             ON CONFLICT(source_address) DO UPDATE SET
                 target_address = excluded.target_address,
+                source_addresses_json = excluded.source_addresses_json,
+                target_addresses_json = excluded.target_addresses_json,
                 enabled = 1,
                 updated_at = excluded.updated_at
             """,
-            (source, target, now, now),
+            (source, target, json.dumps(sources), json.dumps(targets), now, now),
         )
         row = conn.execute("SELECT * FROM forwarding_rules WHERE source_address = ?", (source,)).fetchone()
     return row_to_forwarding_rule(row)
 
 
-def update_forwarding_rule(rule_id: int, *, enabled: bool) -> dict[str, Any] | None:
+def update_forwarding_rule(
+    rule_id: int,
+    *,
+    enabled: bool | None = None,
+    source_addresses: Any | None = None,
+    target_addresses: Any | None = None,
+) -> dict[str, Any] | None:
     with _connect() as conn:
+        current = conn.execute("SELECT * FROM forwarding_rules WHERE id = ?", (rule_id,)).fetchone()
+        if current is None:
+            return None
+        sources = _normalize_forwarding_values(
+            source_addresses if source_addresses is not None else _decode_forwarding_addresses(
+                current["source_addresses_json"], current["source_address"]
+            )
+        )
+        targets = _normalize_forwarding_values(
+            target_addresses if target_addresses is not None else _decode_forwarding_addresses(
+                current["target_addresses_json"], current["target_address"]
+            )
+        )
+        if not sources or not targets:
+            raise ValueError("Alias và email chuyển tiếp không được để trống")
+        source = ",".join(sources)
+        target = ",".join(targets)
+        existing_rows = conn.execute(
+            "SELECT id, source_addresses_json, source_address FROM forwarding_rules WHERE id != ?",
+            (rule_id,),
+        ).fetchall()
+        source_set = set(sources)
+        for existing in existing_rows:
+            existing_sources = set(_decode_forwarding_addresses(existing["source_addresses_json"], existing["source_address"]))
+            if existing_sources.intersection(source_set):
+                raise ValueError("Một alias đã thuộc quy tắc chuyển tiếp khác")
         cursor = conn.execute(
-            "UPDATE forwarding_rules SET enabled = ?, updated_at = ? WHERE id = ?",
-            (int(enabled), utc_now_iso(), rule_id),
+            """
+            UPDATE forwarding_rules
+            SET source_address = ?, target_address = ?, source_addresses_json = ?,
+                target_addresses_json = ?, enabled = COALESCE(?, enabled), updated_at = ?
+            WHERE id = ?
+            """,
+            (source, target, json.dumps(sources), json.dumps(targets), None if enabled is None else int(enabled), utc_now_iso(), rule_id),
         )
         if cursor.rowcount == 0:
             return None
+        if enabled is False:
+            conn.execute(
+                "UPDATE forwarding_deliveries SET status = 'cancelled', updated_at = ? WHERE rule_id = ? AND status IN ('pending', 'retrying')",
+                (utc_now_iso(), rule_id),
+            )
         row = conn.execute("SELECT * FROM forwarding_rules WHERE id = ?", (rule_id,)).fetchone()
     return row_to_forwarding_rule(row)
 
@@ -1072,17 +1207,28 @@ def _enqueue_forwarding_deliveries(
     recipient_address: str,
 ) -> None:
     now = utc_now_iso()
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO forwarding_deliveries(
-            rule_id, message_id, status, attempt_count, next_attempt_at, created_at, updated_at
+    recipient = normalize_address(recipient_address)
+    rules = conn.execute(
+        "SELECT id, source_address, source_addresses_json, target_address, target_addresses_json FROM forwarding_rules WHERE enabled = 1"
+    ).fetchall()
+    for rule in rules:
+        sources = _decode_forwarding_addresses(rule["source_addresses_json"], rule["source_address"])
+        if recipient not in sources:
+            continue
+        targets = _decode_forwarding_addresses(rule["target_addresses_json"], rule["target_address"])
+        if not targets:
+            continue
+        target = ",".join(targets)
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO forwarding_deliveries(
+                rule_id, message_id, target_address, target_addresses_json,
+                status, attempt_count, next_attempt_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'pending', 0, ?, ?, ?)
+            """,
+            (rule["id"], message_id, target, json.dumps(targets), now, now, now),
         )
-        SELECT id, ?, 'pending', 0, ?, ?, ?
-        FROM forwarding_rules
-        WHERE source_address = ? AND enabled = 1
-        """,
-        (message_id, now, now, now, normalize_address(recipient_address)),
-    )
 
 
 def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
@@ -1094,7 +1240,7 @@ def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
                 deliveries.id AS delivery_id,
                 deliveries.attempt_count AS delivery_attempt_count,
                 rules.source_address AS forwarding_source_address,
-                rules.target_address AS forwarding_target_address,
+                COALESCE(NULLIF(deliveries.target_address, ''), rules.target_address) AS forwarding_target_address,
                 messages.*
             FROM forwarding_deliveries AS deliveries
             JOIN forwarding_rules AS rules ON rules.id = deliveries.rule_id

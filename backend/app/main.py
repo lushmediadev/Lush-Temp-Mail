@@ -68,20 +68,36 @@ def _decode_outgoing_attachments(value: Any) -> list[dict[str, Any]]:
     return validate_outgoing_attachments(decoded)
 
 
-def _normalize_forward_target(value: Any) -> str:
-    addresses = parse_address_list(str(value or ""))
-    if len(addresses) != 1 or "@" not in addresses[0]:
-        raise ValueError("Email nhận chuyển tiếp không hợp lệ")
-    target = normalize_address(addresses[0])
-    try:
-        local_part, domain = split_address(target)
-    except ValueError as error:
-        raise ValueError("Email nhận chuyển tiếp không hợp lệ") from error
-    if not is_valid_local_part(local_part) or not domain or "." not in domain:
-        raise ValueError("Email nhận chuyển tiếp không hợp lệ")
-    if domain == settings.mail_domain:
-        raise ValueError(f"Email nhận chuyển tiếp phải nằm ngoài @{settings.mail_domain} để tránh vòng lặp")
-    return target
+def _normalize_forward_sources(value: Any) -> list[str]:
+    values = value if isinstance(value, list) else parse_address_list(str(value or ""))
+    if not values:
+        raise ValueError("Alias nhận thư không được để trống")
+    sources: list[str] = []
+    for value_item in values:
+        source = normalize_lookup_address(value_item, settings.mail_domain)
+        if source not in sources:
+            sources.append(source)
+    return sources
+
+
+def _normalize_forward_targets(value: Any) -> list[str]:
+    addresses = value if isinstance(value, list) else parse_address_list(str(value or ""))
+    if not addresses:
+        raise ValueError("Email nhận chuyển tiếp không được để trống")
+    targets: list[str] = []
+    for address in addresses:
+        target = normalize_address(address)
+        try:
+            local_part, domain = split_address(target)
+        except ValueError as error:
+            raise ValueError("Email nhận chuyển tiếp không hợp lệ") from error
+        if not is_valid_local_part(local_part) or not domain or "." not in domain:
+            raise ValueError("Email nhận chuyển tiếp không hợp lệ")
+        if domain == settings.mail_domain:
+            raise ValueError(f"Email nhận chuyển tiếp phải nằm ngoài @{settings.mail_domain} để tránh vòng lặp")
+        if target not in targets:
+            targets.append(target)
+    return targets
 
 
 def _expires_at_from_hours(hours: int | None) -> str | None:
@@ -438,20 +454,31 @@ def delete_excluded_alias(excluded_alias_id: int, _session=Depends(require_admin
 
 
 @app.get("/api/forwarding-rules")
-def list_forwarding_rules(_session=Depends(require_admin)) -> dict[str, Any]:
-    return {"items": db.list_forwarding_rules()}
+def list_forwarding_rules(
+    search: str = Query(default=""),
+    _session=Depends(require_admin),
+) -> dict[str, Any]:
+    return {"items": db.list_forwarding_rules(search=search)}
 
 
 @app.post("/api/forwarding-rules")
 def create_forwarding_rule(payload: dict[str, Any] = Body(...), _session=Depends(require_admin)) -> dict[str, Any]:
     try:
-        source_address = normalize_lookup_address(payload.get("source_address") or "", settings.mail_domain)
-        target_address = _normalize_forward_target(payload.get("target_address"))
+        source_addresses = _normalize_forward_sources(
+            payload.get("source_addresses", payload.get("source_address", ""))
+        )
+        target_addresses = _normalize_forward_targets(
+            payload.get("target_addresses", payload.get("target_address", ""))
+        )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    if source_address == target_address:
+    if set(source_addresses).intersection(target_addresses):
         raise HTTPException(status_code=400, detail="Alias nguồn và email nhận chuyển tiếp không được trùng nhau")
-    return {"item": db.create_forwarding_rule(source_address, target_address)}
+    try:
+        item = db.create_forwarding_rule(source_addresses, target_addresses)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"item": item}
 
 
 @app.patch("/api/forwarding-rules/{rule_id}")
@@ -460,9 +487,35 @@ def update_forwarding_rule(
     payload: dict[str, Any] = Body(...),
     _session=Depends(require_admin),
 ) -> dict[str, Any]:
-    if "enabled" not in payload or not isinstance(payload.get("enabled"), bool):
+    if "enabled" in payload and not isinstance(payload.get("enabled"), bool):
         raise HTTPException(status_code=400, detail="Thiếu trạng thái chuyển tiếp")
-    item = db.update_forwarding_rule(rule_id, enabled=bool(payload.get("enabled")))
+    has_sources = "source_addresses" in payload or "source_address" in payload
+    has_targets = "target_addresses" in payload or "target_address" in payload
+    if has_sources != has_targets:
+        raise HTTPException(status_code=400, detail="Cần nhập cả alias nguồn và email nhận chuyển tiếp")
+    source_addresses = None
+    target_addresses = None
+    if has_sources:
+        try:
+            source_addresses = _normalize_forward_sources(
+                payload.get("source_addresses", payload.get("source_address", ""))
+            )
+            target_addresses = _normalize_forward_targets(
+                payload.get("target_addresses", payload.get("target_address", ""))
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        if set(source_addresses).intersection(target_addresses):
+            raise HTTPException(status_code=400, detail="Alias nguồn và email nhận chuyển tiếp không được trùng nhau")
+    try:
+        item = db.update_forwarding_rule(
+            rule_id,
+            enabled=payload.get("enabled"),
+            source_addresses=source_addresses,
+            target_addresses=target_addresses,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
     if item is None:
         raise HTTPException(status_code=404, detail="Quy tắc chuyển tiếp không tồn tại")
     return {"item": item}

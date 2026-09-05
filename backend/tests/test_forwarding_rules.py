@@ -108,6 +108,31 @@ def test_forwarding_worker_keeps_failed_delivery_for_retry(monkeypatch, tmp_path
     assert rule["last_error"] == "SMTP unavailable"
 
 
+def test_forwarding_rule_supports_multiple_sources_and_targets(monkeypatch, tmp_path):
+    _init_temp_db(monkeypatch, tmp_path)
+    rule = db.create_forwarding_rule(
+        ["first@lushmedia.net", "second@lushmedia.net"],
+        ["owner@gmail.com", "backup@outlook.com"],
+    )
+
+    assert rule["source_addresses"] == ["first@lushmedia.net", "second@lushmedia.net"]
+    assert rule["target_addresses"] == ["backup@outlook.com", "owner@gmail.com"]
+    assert len(db.list_forwarding_rules(search="backup@outlook")) == 1
+
+    db.store_message(_message_payload(5, recipient="second@lushmedia.net"))
+    due = db.list_due_forwarding_deliveries()
+    assert len(due) == 1
+    assert due[0]["target_address"] == "backup@outlook.com,owner@gmail.com"
+
+    updated = db.update_forwarding_rule(
+        rule["id"],
+        source_addresses="third@lushmedia.net, second@lushmedia.net",
+        target_addresses="owner@gmail.com",
+    )
+    assert updated["source_addresses"] == ["second@lushmedia.net", "third@lushmedia.net"]
+    assert updated["target_addresses"] == ["owner@gmail.com"]
+
+
 def test_forwarding_api_rejects_internal_destination():
     with pytest.raises(HTTPException) as raised:
         main.create_forwarding_rule(

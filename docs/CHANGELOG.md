@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-09-05 - forwarding_rule_search_and_edit
+- Added: search for forwarding rules by source alias or destination address.
+- Changed: one rule accepts multiple source aliases and multiple external destinations separated by commas.
+- Added: edit modal with pencil action; pending deliveries keep their original destination snapshot.
+
 ### 2026-09-04 - mail_performance_bootstrap
 - Changed: initial login renders the cached mail list before running the slower IMAP sync in the background.
 - Changed: inbox and sent list APIs return summary fields only; full message bodies and attachment payloads load on detail view.

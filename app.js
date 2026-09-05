@@ -20,6 +20,8 @@ const state = {
   editingUserId: null,
   excludedAliases: [],
   forwardingRules: [],
+  forwardingSearch: '',
+  editingForwardingRuleId: null,
   newMessageAttachments: [],
   detailPaneWidth: null,
 };
@@ -82,7 +84,10 @@ function cacheDom() {
     'autoDeleteCount', 'autoDeleteForm', 'autoDeleteAddressInput', 'autoDeleteReasonInput',
     'saveAutoDeleteBtn', 'autoDeleteList', 'autoDeleteEmptyState',
     'forwardingCount', 'forwardingForm', 'forwardingSourceInput', 'forwardingTargetInput',
-    'saveForwardingBtn', 'forwardingList', 'forwardingEmptyState',
+    'saveForwardingBtn', 'forwardingList', 'forwardingEmptyState', 'forwardingSearchInput',
+    'forwardingEditModal', 'forwardingEditForm', 'forwardingEditSourceInput',
+    'forwardingEditTargetInput', 'forwardingEditError', 'closeForwardingEditBtn',
+    'cancelForwardingEditBtn', 'saveForwardingEditBtn',
     'newMessageModal', 'newMessageForm', 'newMessageFrom', 'newMessageTo', 'newMessageCc',
     'newMessageSubject', 'newMessageBody', 'newMessageError', 'closeNewMessageBtn',
     'cancelNewMessageBtn', 'sendNewMessageBtn', 'newMessageAttachmentInput',
@@ -104,15 +109,19 @@ function bindEvents() {
   dom.usersTabBtn.addEventListener('click', () => setAdminView('users'));
   dom.autoDeleteTabBtn.addEventListener('click', () => setAdminView('auto-delete'));
   dom.forwardingTabBtn.addEventListener('click', () => setAdminView('forwarding'));
+  dom.forwardingSearchInput.addEventListener('input', onForwardingSearchChange);
   dom.createUserBtn.addEventListener('click', openCreateUserModal);
   dom.autoDeleteForm.addEventListener('submit', onAutoDeleteFormSubmit);
   dom.forwardingForm.addEventListener('submit', onForwardingFormSubmit);
+  dom.forwardingEditForm.addEventListener('submit', onForwardingEditSubmit);
   dom.userForm.addEventListener('submit', onUserFormSubmit);
   dom.closeUserModalBtn.addEventListener('click', closeUserModal);
   dom.cancelUserFormBtn.addEventListener('click', closeUserModal);
   dom.newMessageForm.addEventListener('submit', sendNewMessage);
   dom.closeNewMessageBtn.addEventListener('click', closeNewMessageComposer);
   dom.cancelNewMessageBtn.addEventListener('click', closeNewMessageComposer);
+  dom.closeForwardingEditBtn.addEventListener('click', closeForwardingEditModal);
+  dom.cancelForwardingEditBtn.addEventListener('click', closeForwardingEditModal);
   dom.newMessageAttachmentBtn.addEventListener('click', () => dom.newMessageAttachmentInput.click());
   dom.newMessageAttachmentInput.addEventListener('change', onNewMessageAttachmentChange);
   dom.newMessageModal.addEventListener('click', (event) => {
@@ -123,6 +132,11 @@ function bindEvents() {
   dom.userModal.addEventListener('click', (event) => {
     if (event.target instanceof HTMLElement && event.target.dataset.userModalClose === 'true') {
       closeUserModal();
+    }
+  });
+  dom.forwardingEditModal.addEventListener('click', (event) => {
+    if (event.target instanceof HTMLElement && event.target.dataset.forwardingEditClose === 'true') {
+      closeForwardingEditModal();
     }
   });
 
@@ -276,6 +290,8 @@ async function logout() {
   state.editingUserId = null;
   state.excludedAliases = [];
   state.forwardingRules = [];
+  state.forwardingSearch = '';
+  state.editingForwardingRuleId = null;
   state.newMessageAttachments = [];
   stopAutoRefresh();
   stopRelativeTimeTicker();
@@ -1100,9 +1116,21 @@ async function deleteExcludedAlias(excludedAliasId) {
 
 
 async function loadForwardingRules() {
-  const payload = await api('/api/forwarding-rules');
+  const query = new URLSearchParams();
+  if (state.forwardingSearch.trim()) {
+    query.set('search', state.forwardingSearch.trim());
+  }
+  const payload = await api(`/api/forwarding-rules${query.toString() ? `?${query.toString()}` : ''}`);
   state.forwardingRules = payload.items || [];
   renderForwardingRules();
+}
+
+function onForwardingSearchChange(event) {
+  state.forwardingSearch = event.target.value;
+  clearTimeout(mainSearchTimer);
+  mainSearchTimer = window.setTimeout(() => {
+    loadForwardingRules().catch(handleError);
+  }, 180);
 }
 
 function renderForwardingRules() {
@@ -1131,15 +1159,18 @@ function renderForwardingRules() {
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 flex-wrap">
-            <p class="text-sm font-bold text-gray-900 break-all">${escapeHtml(rule.source_address)}</p>
+            <p class="text-sm font-bold text-gray-900 break-all">${escapeHtml((rule.source_addresses || [rule.source_address]).join(', '))}</p>
             <i data-lucide="arrow-right" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
-            <p class="text-sm font-semibold text-gray-700 break-all">${escapeHtml(rule.target_address)}</p>
+            <p class="text-sm font-semibold text-gray-700 break-all">${escapeHtml((rule.target_addresses || [rule.target_address]).join(', '))}</p>
             <span class="forwarding-badge ${statusClass}">${statusLabel}</span>
           </div>
           <p class="text-xs text-gray-400 mt-1">${lastForwarded}</p>
           ${errorLine}
         </div>
         <div class="flex items-center gap-1">
+          <button class="user-action-btn" type="button" title="Sửa quy tắc" data-edit-forwarding-rule="${rule.id}">
+            <i data-lucide="pencil" class="w-4 h-4 pointer-events-none"></i>
+          </button>
           <button class="user-action-btn" type="button" title="${rule.enabled ? 'Tạm dừng' : 'Bật chuyển tiếp'}" data-toggle-forwarding-rule="${rule.id}">
             <i data-lucide="${rule.enabled ? 'pause' : 'play'}" class="w-4 h-4 pointer-events-none"></i>
           </button>
@@ -1153,6 +1184,9 @@ function renderForwardingRules() {
 
   dom.forwardingList.querySelectorAll('[data-toggle-forwarding-rule]').forEach((button) => {
     button.addEventListener('click', () => toggleForwardingRule(Number(button.dataset.toggleForwardingRule)).catch(handleError));
+  });
+  dom.forwardingList.querySelectorAll('[data-edit-forwarding-rule]').forEach((button) => {
+    button.addEventListener('click', () => openForwardingEditModal(Number(button.dataset.editForwardingRule)));
   });
   dom.forwardingList.querySelectorAll('[data-delete-forwarding-rule]').forEach((button) => {
     button.addEventListener('click', () => deleteForwardingRule(Number(button.dataset.deleteForwardingRule)).catch(handleError));
@@ -1173,14 +1207,67 @@ async function onForwardingFormSubmit(event) {
   try {
     await api('/api/forwarding-rules', {
       method: 'POST',
-      body: JSON.stringify({ source_address: sourceAddress, target_address: targetAddress }),
+      body: JSON.stringify({ source_addresses: sourceAddress, target_addresses: targetAddress }),
     });
     dom.forwardingSourceInput.value = '';
     dom.forwardingTargetInput.value = '';
     await loadForwardingRules();
     showToast('Đã bật tự động chuyển tiếp');
+  } catch (error) {
+    handleError(error);
   } finally {
     dom.saveForwardingBtn.disabled = false;
+  }
+}
+
+function openForwardingEditModal(ruleId) {
+  const rule = state.forwardingRules.find((item) => item.id === ruleId);
+  if (!rule) {
+    return;
+  }
+  state.editingForwardingRuleId = ruleId;
+  dom.forwardingEditSourceInput.value = (rule.source_addresses || [rule.source_address]).join(', ');
+  dom.forwardingEditTargetInput.value = (rule.target_addresses || [rule.target_address]).join(', ');
+  dom.forwardingEditError.classList.add('hidden');
+  dom.forwardingEditError.textContent = '';
+  dom.forwardingEditModal.classList.remove('hidden');
+  dom.forwardingEditModal.classList.add('flex');
+  window.setTimeout(() => dom.forwardingEditSourceInput.focus(), 30);
+  lucide.createIcons();
+}
+
+function closeForwardingEditModal() {
+  dom.forwardingEditModal.classList.add('hidden');
+  dom.forwardingEditModal.classList.remove('flex');
+  dom.forwardingEditError.classList.add('hidden');
+  dom.forwardingEditError.textContent = '';
+  state.editingForwardingRuleId = null;
+}
+
+async function onForwardingEditSubmit(event) {
+  event.preventDefault();
+  const ruleId = state.editingForwardingRuleId;
+  if (!ruleId) {
+    return;
+  }
+  dom.forwardingEditError.classList.add('hidden');
+  dom.saveForwardingEditBtn.disabled = true;
+  try {
+    await api(`/api/forwarding-rules/${ruleId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        source_addresses: dom.forwardingEditSourceInput.value.trim(),
+        target_addresses: dom.forwardingEditTargetInput.value.trim(),
+      }),
+    });
+    closeForwardingEditModal();
+    await loadForwardingRules();
+    showToast('Đã cập nhật quy tắc chuyển tiếp');
+  } catch (error) {
+    dom.forwardingEditError.textContent = error.message || 'Không cập nhật được quy tắc';
+    dom.forwardingEditError.classList.remove('hidden');
+  } finally {
+    dom.saveForwardingEditBtn.disabled = false;
   }
 }
 
