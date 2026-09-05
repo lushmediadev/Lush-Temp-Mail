@@ -273,6 +273,7 @@ def init_db() -> None:
             _refresh_alias_stats(conn, alias_row["id"])
         conn.execute("UPDATE messages SET mailbox_received_at = COALESCE(mailbox_received_at, received_at) WHERE mailbox_received_at IS NULL")
         conn.execute("UPDATE messages SET ingested_at = COALESCE(ingested_at, received_at) WHERE ingested_at IS NULL")
+        _normalize_legacy_forwarded_recipient_lists(conn)
         session_columns = {row["name"] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
         if "role" not in session_columns:
             conn.execute("ALTER TABLE sessions ADD COLUMN role TEXT NOT NULL DEFAULT 'admin'")
@@ -617,6 +618,25 @@ def _normalize_forwarding_values(value: Any) -> list[str]:
         if address and address not in addresses:
             addresses.append(address)
     return sorted(addresses)
+
+
+def _normalize_legacy_forwarded_recipient_lists(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, to_json FROM sent_messages WHERE mode = 'auto-forward'"
+    ).fetchall()
+    for row in rows:
+        try:
+            values = json.loads(row["to_json"] or "[]")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(values, list) or len(values) != 1 or "," not in str(values[0]):
+            continue
+        normalized = _normalize_forwarding_values(values[0])
+        if len(normalized) > 1:
+            conn.execute(
+                "UPDATE sent_messages SET to_json = ? WHERE id = ?",
+                (json.dumps(normalized, ensure_ascii=False), row["id"]),
+            )
 
 
 def _attachment_metadata(attachment: dict[str, Any], fallback_index: int) -> dict[str, Any]:

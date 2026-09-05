@@ -85,6 +85,7 @@ def test_forwarding_worker_sends_body_and_cached_attachments_once(monkeypatch, t
     assert captured["source_message"]["recipient_address"] == "lush@lushmedia.net"
     assert captured["attachments"][0]["content"] == b"test"
     assert stored_sent[0]["mode"] == "auto-forward"
+    assert stored_sent[0]["to"] == ["owner@gmail.com"]
     assert stored_sent[0]["attachments"][0]["content"] == b"test"
     assert db.list_due_forwarding_deliveries() == []
     rule = db.list_forwarding_rules()[0]

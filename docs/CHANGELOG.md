@@ -1,5 +1,10 @@
 # Changelog
 
+### 2026-09-05 - multi_recipient_delivery_and_forwarding_layout
+- Fixed: messages addressed to multiple aliases are visible in each matching inbox and auto-forward rule.
+- Fixed: sent audit rows store multiple forwarding destinations as separate recipients.
+- Changed: forwarding search aligns with the right edge of the rule panel.
+
 ### 2026-09-05 - preserve_multiple_inbound_aliases
 - Fixed: one inbound message addressed to multiple LushMail aliases is indexed for every alias instead of always using the first address in the `To` header.
 - Added: recipient mapping migration backfills existing messages from stored headers and keeps public inbox lookup and forwarding rules alias-aware.

@@ -848,6 +848,12 @@ body.detail-resizing * {
   flex-shrink: 0;
 }
 
+.forwarding-content-shell {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+}
+
 .forwarding-search-wrap:focus-within {
   border-color: #ffb8a3;
   background: #ffffff;

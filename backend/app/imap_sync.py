@@ -12,7 +12,7 @@ from email.utils import getaddresses
 from . import db
 from .config import settings
 from .events import inbox_events
-from .mailer import send_automatic_forward
+from .mailer import parse_address_list, send_automatic_forward
 from .parser import (
     collect_headers,
     decode_mime_text,
@@ -199,7 +199,7 @@ class MailSyncService:
                             "source_message_id": message["id"],
                             "mode": "auto-forward",
                             "from_email": message["recipient_address"],
-                            "to": [delivery["target_address"]],
+                            "to": parse_address_list(delivery["target_address"]),
                             "cc": [],
                             "subject": message.get("subject") or "(No subject)",
                             "body": message.get("text_body") or message.get("snippet") or "",
