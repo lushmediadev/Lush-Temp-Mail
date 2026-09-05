@@ -1548,16 +1548,24 @@ def _build_message_scope(
     alias_id: int | None = None,
     filter_name: str = "all",
     search: str = "",
+    include_recipient_mappings: bool = False,
 ) -> tuple[str, list[Any]]:
     query = """
         FROM messages
         LEFT JOIN aliases ON aliases.id = messages.alias_id
+    """
+    if include_recipient_mappings:
+        query += " JOIN message_recipients ON message_recipients.message_id = messages.id"
+    query += """
         WHERE messages.suppressed = 0
           AND COALESCE(aliases.status, 'active') != 'deleted'
     """
     values: list[Any] = []
     if alias_id is not None:
-        query += " AND EXISTS (SELECT 1 FROM message_recipients WHERE message_recipients.message_id = messages.id AND message_recipients.alias_id = ?)"
+        if include_recipient_mappings:
+            query += " AND message_recipients.alias_id = ?"
+        else:
+            query += " AND EXISTS (SELECT 1 FROM message_recipients WHERE message_recipients.message_id = messages.id AND message_recipients.alias_id = ?)"
         values.append(alias_id)
     if filter_name == "unread":
         query += " AND unread = 1"
@@ -1591,13 +1599,18 @@ def _build_message_scope(
 
 
 def list_messages(*, alias_id: int | None = None, filter_name: str = "all", search: str = "", limit: int = 200) -> list[dict[str, Any]]:
-    scope_query, values = _build_message_scope(alias_id=alias_id, filter_name=filter_name, search=search)
+    scope_query, values = _build_message_scope(
+        alias_id=alias_id,
+        filter_name=filter_name,
+        search=search,
+        include_recipient_mappings=True,
+    )
     query = f"""
         SELECT
             messages.id,
             messages.message_id,
-            messages.alias_id,
-            messages.recipient_address,
+            message_recipients.alias_id,
+            message_recipients.recipient_address,
             messages.from_name,
             messages.from_email,
             messages.subject,
@@ -1621,7 +1634,7 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
         item = row_to_message_summary(row)
         if item is None:
             continue
-        key = item.get("message_id") or f"{row['imap_mailbox']}:{row['imap_uid']}"
+        key = f"{item.get('message_id') or f'{row['imap_mailbox']}:{row['imap_uid']}'}:{item['recipient_address']}"
         if key in seen_keys:
             continue
         seen_keys.add(key)

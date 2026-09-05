@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-09-05 - show_multi_alias_rows_in_all_mail
+- Fixed: the admin all-mail list keeps one row per recipient alias instead of collapsing multi-alias messages globally by `Message-ID`.
+- Kept: each alias-specific inbox still collapses duplicate delivery copies to one message.
+
 ### 2026-09-05 - multi_recipient_delivery_and_forwarding_layout
 - Fixed: messages addressed to multiple aliases are visible in each matching inbox and auto-forward rule.
 - Fixed: sent audit rows store multiple forwarding destinations as separate recipients.
