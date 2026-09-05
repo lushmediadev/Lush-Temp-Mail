@@ -1,5 +1,8 @@
 # Changelog
 
+### 2026-09-05 - align_forwarding_search_wrapper
+- Fixed: forwarding search wrapper uses the same centered 980px width as rule rows, including older `user-content-shell` markup retained in an already-open page.
+
 ### 2026-09-05 - show_alias_context_in_public_inbox
 - Fixed: alias-specific inbox rows and details display the alias being viewed when one message was sent to multiple aliases.
 
