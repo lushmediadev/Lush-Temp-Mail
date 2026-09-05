@@ -1,5 +1,9 @@
 # Changelog
 
+### 2026-09-05 - improve_auto_forward_deliverability
+- Changed: automatic forwards use the stable authenticated `contact@lushmedia.net` sender, retain the source alias in `Reply-To` and `X-Forwarded-To`, and preserve the original subject.
+- Changed: multiple forwarding destinations are sent as separate SMTP deliveries with independent retry state.
+
 ### 2026-09-05 - align_forwarding_search_wrapper
 - Fixed: forwarding search wrapper uses the same centered 980px width as rule rows, including older `user-content-shell` markup retained in an already-open page.
 

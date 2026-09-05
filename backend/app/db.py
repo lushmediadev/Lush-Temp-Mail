@@ -198,6 +198,31 @@ def init_db() -> None:
             WHERE target_address = '' OR target_addresses_json = '[]' OR target_addresses_json IS NULL
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS forwarding_delivery_targets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                delivery_id INTEGER NOT NULL,
+                target_address TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                next_attempt_at TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                forwarded_at TEXT,
+                UNIQUE(delivery_id, target_address),
+                FOREIGN KEY(delivery_id) REFERENCES forwarding_deliveries(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_forwarding_delivery_targets_due
+            ON forwarding_delivery_targets(status, next_attempt_at)
+            """
+        )
+        _backfill_forwarding_delivery_targets(conn)
         message_columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "important" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN important INTEGER NOT NULL DEFAULT 0")
@@ -636,6 +661,28 @@ def _normalize_legacy_forwarded_recipient_lists(conn: sqlite3.Connection) -> Non
             conn.execute(
                 "UPDATE sent_messages SET to_json = ? WHERE id = ?",
                 (json.dumps(normalized, ensure_ascii=False), row["id"]),
+            )
+
+
+def _backfill_forwarding_delivery_targets(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT id, target_address, target_addresses_json, status, attempt_count, last_error, next_attempt_at, created_at, updated_at, forwarded_at FROM forwarding_deliveries"
+    ).fetchall()
+    for row in rows:
+        targets = _decode_forwarding_addresses(row["target_addresses_json"], row["target_address"])
+        for target in targets:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO forwarding_delivery_targets(
+                    delivery_id, target_address, status, attempt_count, last_error,
+                    next_attempt_at, created_at, updated_at, forwarded_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    row["id"], target, row["status"], row["attempt_count"], row["last_error"],
+                    row["next_attempt_at"], row["created_at"], row["updated_at"], row["forwarded_at"],
+                ),
             )
 
 
@@ -1343,6 +1390,23 @@ def _enqueue_forwarding_deliveries(
             """,
             (rule["id"], message_id, target, json.dumps(targets), now, now, now),
         )
+        delivery = conn.execute(
+            "SELECT id FROM forwarding_deliveries WHERE rule_id = ? AND message_id = ?",
+            (rule["id"], message_id),
+        ).fetchone()
+        if delivery is None:
+            continue
+        for target_address in targets:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO forwarding_delivery_targets(
+                    delivery_id, target_address, status, attempt_count, next_attempt_at,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, 'pending', 0, ?, ?, ?)
+                """,
+                (delivery["id"], target_address, now, now, now),
+            )
 
 
 def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
@@ -1351,19 +1415,21 @@ def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT
+                delivery_targets.id AS target_delivery_id,
                 deliveries.id AS delivery_id,
-                deliveries.attempt_count AS delivery_attempt_count,
+                delivery_targets.attempt_count AS delivery_attempt_count,
                 rules.source_address AS forwarding_source_address,
-                COALESCE(NULLIF(deliveries.target_address, ''), rules.target_address) AS forwarding_target_address,
+                delivery_targets.target_address AS forwarding_target_address,
                 messages.*
-            FROM forwarding_deliveries AS deliveries
+            FROM forwarding_delivery_targets AS delivery_targets
+            JOIN forwarding_deliveries AS deliveries ON deliveries.id = delivery_targets.delivery_id
             JOIN forwarding_rules AS rules ON rules.id = deliveries.rule_id
             JOIN messages ON messages.id = deliveries.message_id
-            WHERE deliveries.status IN ('pending', 'retrying')
-              AND deliveries.next_attempt_at <= ?
+            WHERE delivery_targets.status IN ('pending', 'retrying')
+              AND delivery_targets.next_attempt_at <= ?
               AND rules.enabled = 1
               AND messages.suppressed = 0
-            ORDER BY deliveries.next_attempt_at ASC, deliveries.id ASC
+            ORDER BY delivery_targets.next_attempt_at ASC, delivery_targets.id ASC
             LIMIT ?
             """,
             (now, max(1, int(limit))),
@@ -1376,7 +1442,8 @@ def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
             continue
         deliveries.append(
             {
-                "id": row["delivery_id"],
+                "id": row["target_delivery_id"],
+                "parent_id": row["delivery_id"],
                 "attempt_count": row["delivery_attempt_count"],
                 "source_address": row["forwarding_source_address"],
                 "target_address": row["forwarding_target_address"],
@@ -1389,21 +1456,45 @@ def list_due_forwarding_deliveries(limit: int = 20) -> list[dict[str, Any]]:
 def mark_forwarding_delivery_success(delivery_id: int) -> None:
     now = utc_now_iso()
     with _connect() as conn:
+        target = conn.execute(
+            "SELECT delivery_id FROM forwarding_delivery_targets WHERE id = ?",
+            (delivery_id,),
+        ).fetchone()
+        if target is None:
+            return
         conn.execute(
             """
-            UPDATE forwarding_deliveries
+            UPDATE forwarding_delivery_targets
             SET status = 'forwarded', attempt_count = attempt_count + 1,
                 last_error = NULL, updated_at = ?, forwarded_at = ?
             WHERE id = ?
             """,
             (now, now, delivery_id),
         )
+        remaining = conn.execute(
+            "SELECT COUNT(*) AS count FROM forwarding_delivery_targets WHERE delivery_id = ? AND status != 'forwarded'",
+            (target["delivery_id"],),
+        ).fetchone()["count"]
+        if remaining == 0:
+            conn.execute(
+                "UPDATE forwarding_deliveries SET status = 'forwarded', attempt_count = attempt_count + 1, last_error = NULL, updated_at = ?, forwarded_at = ? WHERE id = ?",
+                (now, now, target["delivery_id"]),
+            )
+        else:
+            retrying = conn.execute(
+                "SELECT COUNT(*) AS count FROM forwarding_delivery_targets WHERE delivery_id = ? AND status = 'retrying'",
+                (target["delivery_id"],),
+            ).fetchone()["count"]
+            conn.execute(
+                "UPDATE forwarding_deliveries SET status = ?, updated_at = ? WHERE id = ?",
+                ('retrying' if retrying else 'pending', now, target["delivery_id"]),
+            )
 
 
 def mark_forwarding_delivery_failure(delivery_id: int, error: str) -> None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT attempt_count FROM forwarding_deliveries WHERE id = ?",
+            "SELECT delivery_id, attempt_count FROM forwarding_delivery_targets WHERE id = ?",
             (delivery_id,),
         ).fetchone()
         if row is None:
@@ -1412,7 +1503,7 @@ def mark_forwarding_delivery_failure(delivery_id: int, error: str) -> None:
         retry_delay = min(3600, 30 * (2 ** min(next_attempt_count - 1, 7)))
         conn.execute(
             """
-            UPDATE forwarding_deliveries
+            UPDATE forwarding_delivery_targets
             SET status = 'retrying', attempt_count = ?, last_error = ?,
                 next_attempt_at = ?, updated_at = ?
             WHERE id = ?
@@ -1424,6 +1515,10 @@ def mark_forwarding_delivery_failure(delivery_id: int, error: str) -> None:
                 utc_now_iso(),
                 delivery_id,
             ),
+        )
+        conn.execute(
+            "UPDATE forwarding_deliveries SET status = 'retrying', last_error = ?, updated_at = ? WHERE id = ?",
+            (str(error or "Forwarding failed")[:500], utc_now_iso(), row["delivery_id"]),
         )
 
 

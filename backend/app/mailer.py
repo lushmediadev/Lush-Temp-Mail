@@ -48,6 +48,8 @@ def send_composed_message(
     subject: str,
     body: str,
     html_body: str | None = None,
+    reply_to_value: str | None = None,
+    forwarded_to_value: str | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     from_address = (
@@ -71,8 +73,13 @@ def send_composed_message(
 
     message = EmailMessage()
     message["From"] = formataddr((settings.smtp_from_name, from_address))
-    if from_address != envelope_from_address:
-        message["Reply-To"] = from_address
+    reply_to_address = from_address
+    if reply_to_value is not None:
+        reply_to_address = normalize_lookup_address(reply_to_value, settings.mail_domain)
+    if reply_to_value is not None or from_address != envelope_from_address:
+        message["Reply-To"] = reply_to_address
+    if forwarded_to_value:
+        message["X-Forwarded-To"] = normalize_lookup_address(forwarded_to_value, settings.mail_domain)
     message["To"] = ", ".join(to_addresses)
     if cc_addresses:
         message["Cc"] = ", ".join(cc_addresses)
@@ -162,15 +169,17 @@ def send_automatic_forward(
             original_body,
         ]
     )
-    subject = original_subject if original_subject.lower().startswith("fwd:") else f"Fwd: {original_subject}"
+    subject = original_subject
     return send_composed_message(
         source_message=source_message,
         mode="auto-forward",
-        from_value=source_address,
+        from_value=None,
         to_value=target_address,
         cc_value="",
         subject=subject,
         body=body,
         html_body=original_html,
+        reply_to_value=source_address,
+        forwarded_to_value=source_address,
         attachments=attachments,
     )

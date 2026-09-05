@@ -118,9 +118,11 @@ def test_automatic_forward_preserves_source_context(monkeypatch):
     )
 
     assert result == {"ok": True}
-    assert captured["from_value"] == "lush@lushmedia.net"
+    assert captured["from_value"] is None
     assert captured["to_value"] == "owner@gmail.com"
-    assert captured["subject"] == "Fwd: Appeal result"
+    assert captured["subject"] == "Appeal result"
     assert "OpenAI Support <support@example.com>" in captured["body"]
     assert captured["attachments"][0]["filename"] == "result.pdf"
     assert captured["html_body"] == "<p>Approved</p>"
+    assert captured["reply_to_value"] == "lush@lushmedia.net"
+    assert captured["forwarded_to_value"] == "lush@lushmedia.net"

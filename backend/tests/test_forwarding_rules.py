@@ -122,8 +122,8 @@ def test_forwarding_rule_supports_multiple_sources_and_targets(monkeypatch, tmp_
 
     db.store_message(_message_payload(5, recipient="second@lushmedia.net"))
     due = db.list_due_forwarding_deliveries()
-    assert len(due) == 1
-    assert due[0]["target_address"] == "backup@outlook.com,owner@gmail.com"
+    assert len(due) == 2
+    assert {item["target_address"] for item in due} == {"backup@outlook.com", "owner@gmail.com"}
 
     updated = db.update_forwarding_rule(
         rule["id"],
@@ -132,6 +132,35 @@ def test_forwarding_rule_supports_multiple_sources_and_targets(monkeypatch, tmp_
     )
     assert updated["source_addresses"] == ["second@lushmedia.net", "third@lushmedia.net"]
     assert updated["target_addresses"] == ["owner@gmail.com"]
+
+
+def test_forwarding_targets_retry_independently(monkeypatch, tmp_path):
+    _init_temp_db(monkeypatch, tmp_path)
+    db.create_forwarding_rule("first@lushmedia.net", "owner@gmail.com, backup@outlook.com")
+    db.store_message(_message_payload(7, recipient="first@lushmedia.net"))
+    attempts = []
+    stored_sent = []
+
+    def fake_send(**kwargs):
+        attempts.append(kwargs["target_address"])
+        if kwargs["target_address"] == "owner@gmail.com":
+            raise RuntimeError("Gmail temporarily unavailable")
+        return {"message_id": "<forwarded-target@lushmedia.net>"}
+
+    monkeypatch.setattr(imap_sync, "send_automatic_forward", fake_send)
+    monkeypatch.setattr(db, "store_sent_message", lambda payload: stored_sent.append(payload) or {"id": 100})
+    imap_sync.MailSyncService()._process_pending_forwards()
+
+    assert set(attempts) == {"backup@outlook.com", "owner@gmail.com"}
+    assert [item["to"] for item in stored_sent] == [["backup@outlook.com"]]
+    with db._connect() as conn:
+        statuses = conn.execute(
+            "SELECT target_address, status FROM forwarding_delivery_targets ORDER BY target_address"
+        ).fetchall()
+    assert [(row["target_address"], row["status"]) for row in statuses] == [
+        ("backup@outlook.com", "forwarded"),
+        ("owner@gmail.com", "retrying"),
+    ]
 
 
 def test_one_message_is_available_for_all_recipient_aliases(monkeypatch, tmp_path):
