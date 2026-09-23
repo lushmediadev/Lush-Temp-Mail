@@ -51,7 +51,7 @@ By default the reply/forward composer can reuse the same central mailbox credent
 
 - `SMTP_USERNAME=contact@lushmedia.net`
 - `SMTP_PASSWORD=<same as IMAP_PASSWORD>`
-- `SMTP_FROM_ADDRESS=inbox@lushmedia.net`
+- `SMTP_FROM_ADDRESS=contact@lushmedia.net`
 - `SMTP_FROM_NAME=LushMail`
 
 ## 3. Install helper

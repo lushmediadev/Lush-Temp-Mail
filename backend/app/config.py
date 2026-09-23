@@ -38,7 +38,7 @@ class Settings:
         self.smtp_username = os.getenv("SMTP_USERNAME", self.imap_username)
         self.smtp_password = os.getenv("SMTP_PASSWORD", self.imap_password)
         self.smtp_security = os.getenv("SMTP_SECURITY", "starttls").strip().lower()
-        self.smtp_from_address = os.getenv("SMTP_FROM_ADDRESS", f"inbox@{self.mail_domain}")
+        self.smtp_from_address = os.getenv("SMTP_FROM_ADDRESS", self.central_mailbox)
         self.smtp_from_name = os.getenv("SMTP_FROM_NAME", "LushMail")
         self.sync_interval_s = int(os.getenv("MAIL_SYNC_INTERVAL_S", "4"))
         self.sync_enabled = _env_bool("MAIL_SYNC_ENABLED", True)
