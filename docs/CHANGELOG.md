@@ -576,3 +576,6 @@
 # 2026-07-24
 
 - Bổ sung alias người gửi bắt buộc cho modal `Soạn mail`; backend chỉ chấp nhận alias thuộc domain LushMail và dùng cùng địa chỉ cho header `From` lẫn SMTP envelope sender.
+### 2026-09-23 - change_default_sender_address
+- Changed: outgoing mail now uses `inbox@lushmedia.net` as the default visible `From` address.
+- Preserved: `contact@lushmedia.net` remains the central IMAP/SMTP authentication mailbox.
