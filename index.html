@@ -377,6 +377,13 @@
             <p class="mt-1.5 text-xs text-gray-500">Chỉ sử dụng alias thuộc domain @lushmedia.net.</p>
           </div>
           <div>
+            <label for="newMessageFromName" class="mb-1.5 block text-sm font-semibold text-gray-700">Tên người gửi</label>
+            <input id="newMessageFromName" name="from_name" type="text" autocomplete="off" maxlength="120"
+              placeholder="Ví dụ: Do Trieu"
+              class="w-full rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-sm transition-all focus:border-lush-400 focus:outline-none focus:ring-2 focus:ring-lush-500/30">
+            <p class="mt-1.5 text-xs text-gray-500">Để trống sẽ dùng tên người gửi mặc định hiện tại.</p>
+          </div>
+          <div>
             <label for="newMessageTo" class="mb-1.5 block text-sm font-semibold text-gray-700">Người nhận</label>
             <input id="newMessageTo" name="to" type="text" autocomplete="off" required
               placeholder="email@example.com"
@@ -507,6 +514,6 @@
     <span id="toastMsg">Done</span>
   </div>
 
-  <script src="app.js?v=20260905-forwarding-rules"></script>
+  <script src="app.js?v=20260925-sender-name"></script>
 </body>
 </html>

@@ -43,6 +43,7 @@ def send_composed_message(
     source_message: dict[str, Any],
     mode: str,
     from_value: str | None = None,
+    from_name_value: str | None = None,
     to_value: str,
     cc_value: str,
     subject: str,
@@ -72,7 +73,8 @@ def send_composed_message(
         raise ValueError("SMTP_SECURITY không hợp lệ")
 
     message = EmailMessage()
-    message["From"] = formataddr((settings.smtp_from_name, from_address))
+    sender_name = str(from_name_value or "").strip() or settings.smtp_from_name
+    message["From"] = formataddr((sender_name, from_address))
     reply_to_address = from_address
     if reply_to_value is not None:
         reply_to_address = normalize_lookup_address(reply_to_value, settings.mail_domain)

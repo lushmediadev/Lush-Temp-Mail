@@ -674,6 +674,7 @@ def send_new_message(payload: dict[str, Any] = Body(...), _session=Depends(requi
             source_message={},
             mode="send",
             from_value=payload.get("from_alias", ""),
+            from_name_value=payload.get("from_name"),
             to_value=payload.get("to", ""),
             cc_value=payload.get("cc", ""),
             subject=payload.get("subject", ""),

@@ -88,7 +88,7 @@ function cacheDom() {
     'forwardingEditModal', 'forwardingEditForm', 'forwardingEditSourceInput',
     'forwardingEditTargetInput', 'forwardingEditError', 'closeForwardingEditBtn',
     'cancelForwardingEditBtn', 'saveForwardingEditBtn',
-    'newMessageModal', 'newMessageForm', 'newMessageFrom', 'newMessageTo', 'newMessageCc',
+    'newMessageModal', 'newMessageForm', 'newMessageFrom', 'newMessageFromName', 'newMessageTo', 'newMessageCc',
     'newMessageSubject', 'newMessageBody', 'newMessageError', 'closeNewMessageBtn',
     'cancelNewMessageBtn', 'sendNewMessageBtn', 'newMessageAttachmentInput',
     'newMessageAttachmentBtn', 'newMessageAttachmentCount', 'newMessageAttachmentList',
@@ -2044,6 +2044,7 @@ async function sendNewMessage(event) {
     const attachments = await serializeAttachmentFiles(state.newMessageAttachments);
     const payload = {
       from_alias: dom.newMessageFrom.value,
+      from_name: dom.newMessageFromName.value,
       to: dom.newMessageTo.value,
       cc: dom.newMessageCc.value,
       subject: dom.newMessageSubject.value,

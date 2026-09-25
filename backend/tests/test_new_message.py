@@ -126,7 +126,7 @@ def test_admin_ui_exposes_new_message_composer():
     assert 'id="newMessageBtn"' in index_html
     assert 'id="newMessageModal"' in index_html
     assert 'id="newMessageFrom"' in index_html
-    assert "app.js?v=20260905-forwarding-rules" in index_html
+    assert "app.js?v=20260925-sender-name" in index_html
     assert "style.css?v=20260905-forwarding-rules-v2" in index_html
     assert "function openNewMessageComposer()" in app_js
     assert "function sendNewMessage(event)" in app_js

@@ -576,3 +576,9 @@
 # 2026-07-24
 
 - Bổ sung alias người gửi bắt buộc cho modal `Soạn mail`; backend chỉ chấp nhận alias thuộc domain LushMail và dùng cùng địa chỉ cho header `From` lẫn SMTP envelope sender.
+
+### 2026-09-25 - custom_outgoing_sender_name
+- Added: Modal `Soạn email mới` có ô tên người gửi; người nhận thấy tên tùy chỉnh cùng alias gửi.
+- Changed: Tên để trống dùng lại `SMTP_FROM_NAME`; địa chỉ alias và SMTP envelope sender giữ nguyên.
+- Affected files: index.html, app.js, backend/app/main.py, backend/app/mailer.py
+- Impact/Risk: low; tên hiển thị chỉ áp dụng cho email mới gửi qua modal này.
