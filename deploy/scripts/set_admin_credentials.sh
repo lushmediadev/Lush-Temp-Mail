@@ -3,7 +3,18 @@ set -Eeuo pipefail
 
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
-DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+DEFAULT_DEPLOY_DIR="/opt/lush-temp-mail/app/deploy"
+DEPLOY_DIR="${LUSHTEMPMAIL_DEPLOY_DIR:-}"
+COMPOSE_FILE="${LUSHTEMPMAIL_COMPOSE_FILE:-docker-compose.nginx.yml}"
+
+if [[ -z "${DEPLOY_DIR}" ]]; then
+  if [[ -f "${SCRIPT_DIR}/../docker-compose.nginx.yml" ]]; then
+    DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  else
+    DEPLOY_DIR="${DEFAULT_DEPLOY_DIR}"
+  fi
+fi
+
 ENV_FILE="${DEPLOY_DIR}/.env"
 
 usage() {
@@ -102,6 +113,6 @@ env_path.write_text("\n".join(updated) + "\n")
 PY
 
 cd "${DEPLOY_DIR}"
-docker compose --env-file .env -f docker-compose.vps.yml up -d --build
+docker compose --env-file .env -f "${COMPOSE_FILE}" up -d --build
 
 echo "Updated ${ROLE} credentials and redeployed Lush Temp Mail."

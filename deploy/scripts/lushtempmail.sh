@@ -5,6 +5,7 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 DEFAULT_DEPLOY_DIR="/opt/lush-temp-mail/app/deploy"
 DEPLOY_DIR="${LUSHTEMPMAIL_DEPLOY_DIR:-}"
+COMPOSE_FILE="${LUSHTEMPMAIL_COMPOSE_FILE:-docker-compose.nginx.yml}"
 
 if [[ -z "${DEPLOY_DIR}" ]]; then
   if [[ -f "${SCRIPT_DIR}/../docker-compose.vps.yml" ]]; then
@@ -28,7 +29,7 @@ EOF
 
 run_compose() {
   cd "${DEPLOY_DIR}"
-  docker compose --env-file .env -f docker-compose.vps.yml "$@"
+  docker compose --env-file .env -f "${COMPOSE_FILE}" "$@"
 }
 
 case "${1:-}" in

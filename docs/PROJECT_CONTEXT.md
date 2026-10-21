@@ -1,10 +1,11 @@
 # Project Context
 
-- Project: `Lush-Temp-Mail`
-- Current state: repo đã có backend FastAPI + SQLite + IMAP sync tại `backend/`, frontend admin shell ở root, lớp deploy VPS tại `deploy/`, và `.venv` local để chạy test/dev.
-- Existing infrastructure dependency: VPS `82.197.71.6` đang chạy mail server cho `congmail.top`, hostname mail là `mail.congmail.top`, domain ứng dụng dự kiến là `lush.congmail.top`.
-- Product goal: admin dashboard kiểu temp mail để quản lý nhiều địa chỉ `@congmail.top`, xem mail theo từng alias, copy email, đọc OTP/link nhanh, lọc theo service, auto expire/delete alias.
-- Key requirement: người dùng có thể nhập trực tiếp một địa chỉ bất kỳ như `abc123@congmail.top` trên site khác mà vẫn nhận mail, không cần vào app để tạo alias trước.
-- Mail runtime direction: mail server live đã bật catch-all `@congmail.top -> contact@congmail.top`; app backend đọc IMAP từ mailbox trung tâm rồi auto-discover alias mới từ inbound mail thật.
-- VPS runtime status: app container đang chạy trên `127.0.0.1:8012`, Caddy chung trên VPS đã có route nội bộ cho `lush.congmail.top`, nhưng DNS public cho subdomain này vẫn cần trỏ về `82.197.71.6` để lấy cert/public access.
-- Ops helper status: VPS đã có helper `lushtempmail`, và script `lushtempmail set-admin` dùng để đổi `ADMIN_USERNAME` / `ADMIN_PASSWORD` trong `deploy/.env` rồi redeploy app.
+- Product: `Lush-Temp-Mail`, a FastAPI + SQLite temp-mail app with admin and user inbox flows.
+- Public app URL: `https://mail.lushmedia.net`.
+- Recipient domain: `lushmedia.net`; arbitrary aliases must continue to work without pre-creation.
+- Mail transport host: `mx.lushmedia.net`; central mailbox: `contact@lushmedia.net`; incoming `@lushmedia.net` mail must route to that mailbox.
+- Prepared production host: VPS `194.233.69.135`, available through SSH alias `lush1-vps`. It runs `temp.darkambient.co` and a separate LushMail app on `127.0.0.1:8017`; both mail domains share the existing Docker Mailserver.
+- Current public app and MX DNS still route to the source `109.123.227.253`. The VPS `82.197.71.6` is a separate legacy deployment, not the live LushMedia source.
+- Source and target backups are at `/root/lushmail-migration-20261021` on their respective VPS hosts. The target has the mailbox, SQLite database, LushMedia account/aliases, DKIM key, and TLS certificates. A five-minute bridge copies late mail from the source while DNS changes propagate.
+- Cloudflare DNS cutover is pending account sign-in. Keep the source service available until public web and external mail flow are verified.
+- Deployment should use the target's existing Nginx reverse proxy and a dedicated loopback app port; do not bind another service to public `80/443`.

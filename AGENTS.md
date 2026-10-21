@@ -58,4 +58,4 @@
 
 - Không đổi contract API đã dùng bởi frontend nếu chưa cập nhật đồng bộ app.js.
 - Không buộc người dùng phải pre-create alias trước khi nhận mail; đây là yêu cầu cốt lõi.
-- Không chỉnh phá mail stack `congmail.top` hiện đang hoạt động nếu chưa có rollback rõ ràng.
+- Giữ nguyên mail stack `temp.darkambient.co` khi triển khai `Lush-Temp-Mail`; mọi thay đổi mail runtime phải có backup và rollback rõ ràng.

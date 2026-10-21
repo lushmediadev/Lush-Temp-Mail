@@ -1,5 +1,12 @@
 # Changelog
 
+### 2026-10-21 - migrate_lushmedia_mail
+- Updated active app copy and parser fixtures to use `lushmedia.net`; documented `mail.lushmedia.net` as the app URL and `mx.lushmedia.net` as the mail transport host.
+- Added a target-specific Docker Compose/Nginx deploy profile and updated operations helpers to use it.
+- Replaced the retired app/mail hostnames in historical text with neutral labels while preserving the surrounding history.
+- Prepared `lush1-vps` (`194.233.69.135`) with source mailbox/SQLite data, a shared multi-domain mailserver, dual-host mail TLS, web TLS, and a late-mail bridge. Direct HTTPS, IMAP, SMTP auth, alias auto-discovery, OTP/link extraction, and DKIM signing were verified. Public DNS cutover awaits Cloudflare access.
+- Added `.dockerignore` to keep runtime credentials and mailbox/SQLite data out of app images; rebuilt the target image and removed the old build cache.
+
 ### 2026-09-05 - improve_auto_forward_deliverability
 - Changed: automatic forwards use the stable authenticated `contact@lushmedia.net` sender, retain the source alias in `Reply-To` and `X-Forwarded-To`, and preserve the original subject.
 - Changed: multiple forwarding destinations are sent as separate SMTP deliveries with independent retry state.
@@ -109,7 +116,7 @@
 
 ### 2026-03-21 18:05 - deploy_admin_delete_all_and_encoding_fixes_to_vps
 - Changed: uploaded the current admin UI files and backend delete-all support to the live VPS app directory and rebuilt the running container.
-- Fixed: public `https://lush.congmail.top` now serves the admin delete-all UI with the encoding-proof placeholder/tooltip strings instead of the broken mojibake copy.
+- Fixed: public `https://retired-app-host` now serves the admin delete-all UI with the encoding-proof placeholder/tooltip strings instead of the broken mojibake copy.
 - Affected files: live `/opt/lush-temp-mail/app/index.html`, live `/opt/lush-temp-mail/app/app.js`, live `/opt/lush-temp-mail/app/style.css`, live `/opt/lush-temp-mail/app/backend/app/db.py`, live `/opt/lush-temp-mail/app/backend/app/main.py`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: medium; production admin behavior now includes the new delete-all route and current header text/layout.
 
@@ -153,7 +160,7 @@
 ### 2026-03-21 14:56 - deploy_admin_user_split_to_vps
 - Added: live VPS env now includes a real `USER_USERNAME` / `USER_PASSWORD`, and the installed `lushtempmail` helper now exposes `set-user`.
 - Changed: the current admin/user split build was uploaded to `/opt/lush-temp-mail/app`, rebuilt, and restarted on VPS `82.197.71.6`.
-- Fixed: the public site `https://lush.congmail.top` now serves the deployed role-based flow end-to-end, with `user` entering `user.html` and `admin` remaining on the admin dashboard.
+- Fixed: the public site `https://retired-app-host` now serves the deployed role-based flow end-to-end, with `user` entering `user.html` and `admin` remaining on the admin dashboard.
 - Affected files: `deploy/.env` on VPS, live app files under `/opt/lush-temp-mail/app`, `/usr/local/bin/lushtempmail`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: medium; production now depends on the new `user` credential being kept local-only and rotated via `lushtempmail set-user` when needed.
 
@@ -170,18 +177,18 @@
 - Changed: root frontend now uses real API/session state instead of mock email data.
 - Fixed: implemented catch-all-based alias auto-discovery so arbitrary `@congmail.top` addresses can appear without manual pre-creation.
 - Affected files: `index.html`, `app.js`, `style.css`, `.gitignore`, `requirements.txt`, `Dockerfile`, `backend/**`, `deploy/**`, `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
-- Impact/Risk: medium; app/runtime behavior changed significantly, public DNS for `lush.congmail.top` still pending before final public HTTPS cutover.
+- Impact/Risk: medium; app/runtime behavior changed significantly, public DNS for `retired-app-host` still pending before final public HTTPS cutover.
 
 ### 2026-03-20 17:32 - public_proxy_fix
 - Added: documented Docker host-gateway requirement for shared Caddy.
-- Changed: reverse proxy target for `lush.congmail.top` from `127.0.0.1:8012` to `host.docker.internal:8012`.
+- Changed: reverse proxy target for `retired-app-host` from `127.0.0.1:8012` to `host.docker.internal:8012`.
 - Fixed: resolved public `502` cause where Caddy container could not reach the temp-mail app bound on the host loopback.
 - Affected files: `deploy/Caddyfile.snippet`, `deploy/README.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: medium; requires syncing the same proxy fix to the live VPS Caddy stack.
 
 ### 2026-03-20 17:36 - shared_proxy_network_fix
 - Added: `shared_proxy` network attachment and explicit alias `lushtempmail-app` for the temp-mail app service.
-- Changed: Caddy upstream for `lush.congmail.top` now points to `lushtempmail-app:8010`.
+- Changed: Caddy upstream for `retired-app-host` now points to `lushtempmail-app:8010`.
 - Fixed: removed dependency on host loopback publishing, which still blocked Caddy from reaching the app across containers.
 - Affected files: `deploy/docker-compose.vps.yml`, `deploy/Caddyfile.snippet`, `deploy/README.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: medium; live VPS compose and Caddy config must be synced together.
@@ -195,10 +202,10 @@
 
 ### 2026-03-20 16:55 - imap_live_sync_recovery
 - Added: external Docker network attachment `mailstack_default` for the temp-mail app service.
-- Changed: deploy defaults/documentation now keep `IMAP_HOST=mail.congmail.top` instead of the broken host-gateway route.
+- Changed: deploy defaults/documentation now keep `IMAP_HOST=retired-mail-host` instead of the broken host-gateway route.
 - Fixed: live inbox sync for catch-all addresses such as `hoang123@congmail.top`.
 - Affected files: `deploy/docker-compose.vps.yml`, `deploy/.env.example`, `deploy/README.md`, `docs/DECISIONS.md`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
-- Impact/Risk: low; deploy topology changed slightly, but the public `lush.congmail.top` route is unchanged and IMAP sync is now stable.
+- Impact/Risk: low; deploy topology changed slightly, but the public `retired-app-host` route is unchanged and IMAP sync is now stable.
 
 ### 2026-03-20 17:03 - auto_refresh_and_relative_time_ticker
 - Added: frontend auto-refresh loop and separate relative-time ticker while the admin page is visible.
@@ -262,7 +269,7 @@
 
 ### 2026-03-20 19:14 - deploy_latest_ui_polish_to_vps
 - Changed: synced the latest local inbox-focused UI files to the live VPS app copy.
-- Fixed: public `lush.congmail.top` now serves the updated simplified layout after redeploy.
+- Fixed: public `retired-app-host` now serves the updated simplified layout after redeploy.
 - Affected files: `index.html`, `app.js`, `style.css`, `docs/WORKLOG.md`, `docs/CHANGELOG.md`.
 - Impact/Risk: medium; live container was rebuilt and restarted successfully during the deploy.
 

@@ -1,0 +1,22 @@
+name: lushmail
+
+services:
+  app:
+    container_name: lushmail-app
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8017:8010"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - mail
+
+networks:
+  mail:
+    external: true
+    name: darkambient_mail

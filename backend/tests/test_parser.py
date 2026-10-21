@@ -14,27 +14,27 @@ from backend.app.parser import (
 def test_extract_recipient_prefers_original_alias_over_central_mailbox():
     message = message_from_string(
         "From: service@example.com\n"
-        "To: contact@congmail.top\n"
-        "Delivered-To: abc123@congmail.top\n"
+        "To: contact@lushmedia.net\n"
+        "Delivered-To: abc123@lushmedia.net\n"
         "Subject: Test\n\n"
         "Body"
     )
-    assert extract_recipient(message, "congmail.top", "contact@congmail.top") == "abc123@congmail.top"
+    assert extract_recipient(message, "lushmedia.net", "contact@lushmedia.net") == "abc123@lushmedia.net"
 
 
 def test_extract_recipients_keeps_all_matching_aliases():
     message = message_from_string(
         "From: service@example.com\n"
-        "To: first@congmail.top, second@congmail.top\n"
-        "Delivered-To: contact@congmail.top\n"
+        "To: first@lushmedia.net, second@lushmedia.net\n"
+        "Delivered-To: contact@lushmedia.net\n"
         "Subject: Test\n\n"
         "Body"
     )
     from backend.app.parser import extract_recipients
 
-    assert extract_recipients(message, "congmail.top", "contact@congmail.top") == [
-        "first@congmail.top",
-        "second@congmail.top",
+    assert extract_recipients(message, "lushmedia.net", "contact@lushmedia.net") == [
+        "first@lushmedia.net",
+        "second@lushmedia.net",
     ]
 
 
@@ -71,8 +71,8 @@ def test_prefer_readable_text_falls_back_to_html_when_plain_text_is_css_noise():
 def test_extract_attachments_returns_attachment_metadata():
     message = message_from_string(
         "From: service@example.com\n"
-        "To: contact@congmail.top\n"
-        "Delivered-To: abc123@congmail.top\n"
+        "To: contact@lushmedia.net\n"
+        "Delivered-To: abc123@lushmedia.net\n"
         "Subject: Attachment test\n"
         "MIME-Version: 1.0\n"
         "Content-Type: multipart/mixed; boundary=abc\n\n"

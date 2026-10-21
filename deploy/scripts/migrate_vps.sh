@@ -11,10 +11,10 @@ SOURCE_APP_DIR="${SOURCE_APP_DIR:-/opt/lush-temp-mail/app}"
 
 TARGET_BASE_DIR="${TARGET_BASE_DIR:-/opt/lush-temp-mail}"
 TARGET_APP_DIR="${TARGET_APP_DIR:-$TARGET_BASE_DIR/app}"
-REPO_URL="${REPO_URL:-https://github.com/shinemusicllc/Lush-Temp-Mail.git}"
+REPO_URL="${REPO_URL:-https://github.com/lushmediadev/Lush-Temp-Mail.git}"
 BRANCH="${BRANCH:-main}"
 
-COMPOSE_FILE="${COMPOSE_FILE:-deploy/docker-compose.vps.yml}"
+COMPOSE_FILE="${COMPOSE_FILE:-deploy/docker-compose.nginx.yml}"
 SKIP_ENV="${SKIP_ENV:-0}"
 SKIP_DATA="${SKIP_DATA:-0}"
 START_APP="${START_APP:-1}"
@@ -32,8 +32,9 @@ Optional env:
   SOURCE_SSH_PORT=22
   SOURCE_APP_DIR=/opt/lush-temp-mail/app
   TARGET_APP_DIR=/opt/lush-temp-mail/app
-  REPO_URL=https://github.com/shinemusicllc/Lush-Temp-Mail.git
+  REPO_URL=https://github.com/lushmediadev/Lush-Temp-Mail.git
   BRANCH=main
+  COMPOSE_FILE=deploy/docker-compose.nginx.yml
   SKIP_ENV=1
   SKIP_DATA=1
   START_APP=0
@@ -92,9 +93,11 @@ backup_existing_target() {
 sync_git_checkout() {
   mkdir -p "$(dirname "$TARGET_APP_DIR")"
   if [ -d "$TARGET_APP_DIR/.git" ]; then
-    git -C "$TARGET_APP_DIR" fetch --prune origin "$BRANCH"
-    git -C "$TARGET_APP_DIR" checkout "$BRANCH"
-    git -C "$TARGET_APP_DIR" reset --hard "origin/$BRANCH"
+    if [ "$(git -C "$TARGET_APP_DIR" branch --show-current)" != "$BRANCH" ]; then
+      echo "ERROR: target checkout is not on $BRANCH; inspect it before updating." >&2
+      exit 2
+    fi
+    git -C "$TARGET_APP_DIR" pull --ff-only origin "$BRANCH"
   else
     git clone --branch "$BRANCH" "$REPO_URL" "$TARGET_APP_DIR"
   fi
@@ -128,21 +131,16 @@ copy_runtime() {
 }
 
 start_app() {
-  docker network create shared_proxy >/dev/null 2>&1 || true
-  docker network create mailstack_default >/dev/null 2>&1 || true
   cd "$TARGET_APP_DIR"
   docker compose -f "$COMPOSE_FILE" --env-file deploy/.env up -d --build
   docker compose -f "$COMPOSE_FILE" ps
 }
 
 verify_app() {
-  if docker ps --format '{{.Names}}' | grep -qx 'lushtempmail-app'; then
-    docker exec lushtempmail-app python - <<'PY'
-from urllib.request import urlopen
-print(urlopen("http://127.0.0.1:8010/api/health", timeout=10).read().decode())
-PY
+  if docker ps --format '{{.Names}}' | grep -qx 'lushmail-app'; then
+    docker exec lushmail-app python -c 'from urllib.request import urlopen; print(urlopen("http://127.0.0.1:8010/api/health", timeout=10).read().decode())'
   else
-    echo "WARN: lushtempmail-app is not running; skipped container health check."
+    echo "WARN: lushmail-app is not running; skipped container health check."
   fi
 }
 

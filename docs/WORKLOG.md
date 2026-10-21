@@ -17,7 +17,7 @@
 
 - Re-read project memory/rules, then uploaded the current admin UI files (`index.html`, `app.js`, `style.css`) together with backend delete-all support (`backend/app/db.py`, `backend/app/main.py`) to `/opt/lush-temp-mail/app` on VPS `82.197.71.6`.
 - Rebuilt and restarted the live Docker stack from `/opt/lush-temp-mail/app/deploy`, bringing `lushtempmail-app` back up successfully after the image rebuild.
-- Verified the public site at `https://lush.congmail.top/` now serves the updated admin HTML containing the entity-based search placeholder and delete-all tooltip, and re-checked `https://lush.congmail.top/api/health` returning `status: ok`.
+- Verified the public site at `https://retired-app-host/` now serves the updated admin HTML containing the entity-based search placeholder and delete-all tooltip, and re-checked `https://retired-app-host/api/health` returning `status: ok`.
 
 ## 2026-03-21 18:02 - Make admin Vietnamese strings encoding-proof with entities and unicode escapes
 
@@ -50,7 +50,7 @@
 
 - Re-read project memory/rules, then uploaded the locally edited `user.html` directly to `/opt/lush-temp-mail/app/user.html` on VPS `82.197.71.6`.
 - Rebuilt and restarted the live Docker stack from `/opt/lush-temp-mail/app/deploy` so the static user route picked up the new HTML content.
-- Verified the public `https://lush.congmail.top/user.html` response now serves the updated user-facing copy, including the revised meta description and hero text from the local file.
+- Verified the public `https://retired-app-host/user.html` response now serves the updated user-facing copy, including the revised meta description and hero text from the local file.
 
 ## 2026-03-21 16:11 - Refine user inbox rows to normal mailbox style
 
@@ -71,14 +71,14 @@
 - Paused the in-progress VPS redeploy, then refined the user-route auto-scroll again after reviewing the user's screenshot: the previous offset hid too much of the lookup form and made the gap to the browser chrome feel cramped.
 - Updated `user.js` so `scrollToLookupResults()` now anchors to `lookupForm` with a smaller top offset, which keeps the full input area visible while the inbox shell still appears immediately underneath.
 - Bumped the cache-busting asset version in `user.html` to `user-inbox-scroll-4`, uploaded the refreshed `user.html` / `user.js` to `/opt/lush-temp-mail/app`, and rebuilt the live Docker stack from `/opt/lush-temp-mail/app/deploy`.
-- Verified production with `https://lush.congmail.top/api/health` returning `status: ok` and `https://lush.congmail.top/user.html` serving the new asset version `user.js?v=20260321-user-inbox-scroll-4`.
+- Verified production with `https://retired-app-host/api/health` returning `status: ok` and `https://retired-app-host/user.html` serving the new asset version `user.js?v=20260321-user-inbox-scroll-4`.
 
 ## 2026-03-21 16:34 - Redeploy latest user.js edit to VPS
 
 - Re-read project memory/rules, then picked up the latest local `user.js` edit exactly as saved by the user for a targeted VPS deploy.
 - Bumped the static asset version in `user.html` from `user-inbox-scroll-4` to `user-js-redeploy-5` so production browsers would not keep serving a cached copy of the previous JavaScript file.
 - Uploaded the refreshed `user.js` and `user.html` to `/opt/lush-temp-mail/app`, rebuilt the Docker stack from `/opt/lush-temp-mail/app/deploy`, and confirmed container `lushtempmail-app` came back up successfully.
-- Verified live that `https://lush.congmail.top/user.html` now references `user.js?v=20260321-user-js-redeploy-5` and that `https://lush.congmail.top/api/health` still returns `status: ok`.
+- Verified live that `https://retired-app-host/user.html` now references `user.js?v=20260321-user-js-redeploy-5` and that `https://retired-app-host/api/health` still returns `status: ok`.
 
 ## 2026-03-21 16:59 - Investigate mail delay and add sync-on-check for user route
 
@@ -100,7 +100,7 @@
 - Re-read project memory/rules, then packaged the current local runtime diff and uploaded the updated frontend, backend, deploy scripts, and project docs directly to `/opt/lush-temp-mail/app` on VPS `82.197.71.6`.
 - Added `USER_USERNAME=user` and a new production `USER_PASSWORD` into the live `deploy/.env` by running the updated `set_admin_credentials.sh --role user ...`, which also rebuilt and restarted the Docker stack.
 - Reinstalled the global `lushtempmail` helper from the live repo so the VPS command set now includes `set-user` in addition to the existing admin commands.
-- Verified container health from inside the live stack via `/api/health`, then smoke-tested `https://lush.congmail.top` with Playwright: `user` now lands on `user.html` and sees `ÄÄƒng xuáº¥t`, while `admin` still lands on `/`.
+- Verified container health from inside the live stack via `/api/health`, then smoke-tested `https://retired-app-host` with Playwright: `user` now lands on `user.html` and sees `ÄÄƒng xuáº¥t`, while `admin` still lands on `/`.
 - Updated local-only password notes in `deploy/LOCAL_PASSWORDS.md` so the new production `user` credential is available on this machine without committing it to git.
 
 ## 2026-03-20 16:35 - Rule Bootstrap
@@ -108,7 +108,7 @@
 - Scanned `D:\Lush-Temp-Mail` and confirmed repo currently contains only static UI files with no backend/toolchain.
 - Created root `AGENTS.md` with current repo rules and regression checklist.
 - Created project memory docs: `PROJECT_CONTEXT.md`, `DECISIONS.md`, `WORKLOG.md`, `CHANGELOG.md`.
-- Recorded target domain `lush.congmail.top` and the catch-all requirement for arbitrary `@congmail.top` addresses.
+- Recorded target domain `retired-app-host` and the catch-all requirement for arbitrary `@congmail.top` addresses.
 
 ## 2026-03-20 17:20 - Backend + VPS runtime
 
@@ -120,9 +120,9 @@
 - Created `.venv` locally and installed runtime/test dependencies for verification.
 - Uploaded app to VPS at `/opt/lush-temp-mail/app`, created runtime `.env`, installed `lushtempmail` helper, and started container on `127.0.0.1:8012`.
 - Enabled live catch-all on mail stack by updating `postfix-virtual.cf` to route `@congmail.top` into `contact@congmail.top`, preserving existing direct addresses/aliases.
-- Updated shared Caddy config on VPS to add internal route for `lush.congmail.top`.
+- Updated shared Caddy config on VPS to add internal route for `retired-app-host`.
 - Verified live technical flow with a real probe mail: unknown alias `probed1ef7ec7@congmail.top` was auto-created from inbound mail, message stored, OTP `482911` and verify link extracted correctly.
-- Remaining external step: add DNS record for `lush.congmail.top -> 82.197.71.6` so Caddy can obtain public TLS cert and serve the app publicly.
+- Remaining external step: add DNS record for `retired-app-host -> 82.197.71.6` so Caddy can obtain public TLS cert and serve the app publicly.
 
 ## 2026-03-20 17:32 - Public proxy fix
 
@@ -146,8 +146,8 @@
 ## 2026-03-20 16:55 - IMAP live sync recovery
 
 - Reproduced the live issue where mail to `hoang123@congmail.top` reached the mail server but did not appear in the temp-mail dashboard.
-- Confirmed the temp-mail container was using a stale IMAP path and that the host/public route for `mail.congmail.top` was not a reliable way to reach the mailserver from this container stack.
-- Updated deploy defaults/docs to keep `IMAP_HOST=mail.congmail.top` and changed `deploy/docker-compose.vps.yml` so `lushtempmail-app` joins external network `mailstack_default` in addition to `shared_proxy`.
+- Confirmed the temp-mail container was using a stale IMAP path and that the host/public route for `retired-mail-host` was not a reliable way to reach the mailserver from this container stack.
+- Updated deploy defaults/docs to keep `IMAP_HOST=retired-mail-host` and changed `deploy/docker-compose.vps.yml` so `lushtempmail-app` joins external network `mailstack_default` in addition to `shared_proxy`.
 - Synced the deploy files to VPS, redeployed the app, and verified on the live UI that alias `hoang123@congmail.top` and message `opt` are now visible.
 
 ## 2026-03-20 17:03 - Auto refresh and relative time ticker
@@ -217,7 +217,7 @@
 - Uploaded the current local UI files (`index.html`, `app.js`, `style.css`) plus updated project logs to the live repo copy on the server.
 - Rebuilt and restarted the live Docker stack from `/opt/lush-temp-mail/app/deploy` with `docker compose --env-file .env -f docker-compose.vps.yml up -d --build`.
 - Verified container `lushtempmail-app` came back healthy and that `/api/health` returned `status: ok` from inside the container.
-- Verified the public app at `https://lush.congmail.top` reflects the new layout after login, including the simplified topbar/sidebar and working inbox pagination.
+- Verified the public app at `https://retired-app-host` reflects the new layout after login, including the simplified topbar/sidebar and working inbox pagination.
 
 ## 2026-03-20 19:35 - Inbox interaction polish and faster sync
 
@@ -234,7 +234,7 @@
 - Added reply/forward composer UI inside the email detail pane with `To`, `CC`, `Subject`, and `Message` fields styled to match the current Tailwind-based shell.
 - Changed alias lifetime defaults to `60 ngÃ y` (`DEFAULT_ALIAS_HOURS=1440`) and message cleanup to `60 ngÃ y` (`MESSAGE_RETENTION_DAYS=60`) for both local code and live VPS runtime.
 - Updated root `AGENTS.md` build/test commands to be repo-relative instead of the stale `D:` path from the older local workspace.
-- Verified locally with `node --check .\\app.js` and Python compile checks, then verified live at `https://lush.congmail.top` after login that `Quan trá»ng`, star toggle, icon-only delete, and the composer panel are present and working.
+- Verified locally with `node --check .\\app.js` and Python compile checks, then verified live at `https://retired-app-host` after login that `Quan trá»ng`, star toggle, icon-only delete, and the composer panel are present and working.
 
 ## 2026-03-20 20:36 - Detail pane layout polish and recent-badge stability
 
@@ -287,7 +287,7 @@
 
 ## 2026-03-20 21:23 - Enable real SMTP send for reply/forward composer
 
-- Confirmed on the VPS that SMTP auth succeeds against `mail.congmail.top` with both `STARTTLS 587` and `SSL 465`, reusing the central mailbox credential already present for IMAP.
+- Confirmed on the VPS that SMTP auth succeeds against `retired-mail-host` with both `STARTTLS 587` and `SSL 465`, reusing the central mailbox credential already present for IMAP.
 - Added backend SMTP config defaults/fallbacks plus a new `backend/app/mailer.py` service to send composed messages with `To`, `CC`, `Subject`, `Body`, and reply threading headers when available.
 - Added `POST /api/messages/{message_id}/send` and connected the frontend composer send button to that API, including loading state, success toast, and composer close-on-success.
 - Fixed a real delivery issue by adding the missing `Date` header after the first smoke test was rejected by the mail content filter as `BAD HEADER`.
@@ -415,14 +415,14 @@
 - Extended the backend with `/api/events`, `/api/public/events`, and `/api/mail-sync/status`; `MailSyncService` now exposes heartbeat/status data, publishes alias/global events after imported mail, and admin delete flows publish inbox change events too.
 - Updated `app.js` so admin tabs open an `EventSource` stream for near-immediate list refresh, while reducing timer-based refresh to a slower fallback instead of the primary mechanism.
 - Updated `user.js` so manual lookup checks backend liveness first and only calls `/api/public/sync` when the mail watcher is stale; once an alias is open, the user page now listens to alias-scoped `SSE` updates and refreshes the inbox without requiring another click.
-- Verified locally with `py_compile`, `node --check`, a direct async smoke on the new SSE generators, then deployed the changed files to VPS and re-verified `health`, asset versions, `/api/mail-sync/status`, `/api/events`, and `/api/public/events` on `https://lush.congmail.top`.
+- Verified locally with `py_compile`, `node --check`, a direct async smoke on the new SSE generators, then deployed the changed files to VPS and re-verified `health`, asset versions, `/api/mail-sync/status`, `/api/events`, and `/api/public/events` on `https://retired-app-host`.
 
 ## 2026-03-21 21:56 - Fix IMAP IDLE tag handling and measure live pickup latency
 
 - Investigated live production after the user reported slower mail appearance, and found a real backend issue in `IMAP IDLE`: the code was sending the raw `imaplib` tag through Python string formatting, which turned a bytes tag into a literal like `b'CIJC4'` and caused `imaplib.IMAP4.abort` when `IDLE` completed.
 - Patched `backend/app/imap_sync.py` to handle `imaplib` tags as bytes correctly for both entering `IDLE` and waiting for the tagged completion response, then rebuilt and redeployed the app container on VPS.
 - Re-checked live watcher status after deploy: `mode=idle`, `idle_active=true`, `is_stale=false`, with no fresh `IMAP4.abort` trace in the recent logs.
-- Ran a production probe by sending a fresh SMTP message from the VPS mail credentials into a brand-new alias and polling the live user inbox API; the message became visible through `https://lush.congmail.top/api/public/inbox` in about `1.44s`, showing the current `mailbox -> app -> DB -> API` path is fast after the fix.
+- Ran a production probe by sending a fresh SMTP message from the VPS mail credentials into a brand-new alias and polling the live user inbox API; the message became visible through `https://retired-app-host/api/public/inbox` in about `1.44s`, showing the current `mailbox -> app -> DB -> API` path is fast after the fix.
 
 ## 2026-03-21 22:01 - Measure real timestamps against Gmail and production logs
 
@@ -450,7 +450,7 @@
 
 - Re-read project memory, then re-checked production after the user reported the earlier `body stream already read` crash screenshot.
 - Verified directly on live API that `POST /api/auth/login` for role `user` still succeeds and `GET /api/public/inbox?alias=1_@congmail.top` now returns `200` with inbox data instead of `500`.
-- Opened the real browser flow on `https://lush.congmail.top/user.html`, logged in as `user`, searched `1_@congmail.top`, and confirmed the message list plus reading pane render normally with no remaining runtime error on the lookup path.
+- Opened the real browser flow on `https://retired-app-host/user.html`, logged in as `user`, searched `1_@congmail.top`, and confirmed the message list plus reading pane render normally with no remaining runtime error on the lookup path.
 
 ## 2026-03-21 22:29 - Measure latest production mail timing with new timestamp fields
 
@@ -485,14 +485,14 @@
 - Re-read project memory/rules, then investigated the live user screenshot showing the detail pane stuck on skeleton with toast `escapeAttribute is not defined`.
 - Traced the regression to `user.js`: the new iframe-based HTML reader called `escapeAttribute(frameDocument)` but the helper had only been added in `app.js`, not in the user bundle.
 - Added `escapeAttribute()` to `user.js`, bumped the `user.js` asset version in `user.html` to `20260323-user-reader-fix-9`, and redeployed the updated files to `/opt/lush-temp-mail/app` on VPS.
-- Re-verified live that `https://lush.congmail.top/api/health` still returns `ok` and that the served `user.js` bundle now contains both `function escapeAttribute` and the new cache-busted script reference.
+- Re-verified live that `https://retired-app-host/api/health` still returns `ok` and that the served `user.js` bundle now contains both `function escapeAttribute` and the new cache-busted script reference.
 
 ## 2026-03-23 10:30 - Tighten OTP and action-link badges
 
 - Re-read project memory/rules, then investigated the false-positive badge report where an OpenAI verification email surfaced a bogus OTP like `rgin` and too many `Mở link` actions from unrelated HTML/CSS URLs.
 - Tightened `backend/app/parser.py` so OTP extraction now validates only plausible codes, reads HTML through cleaned text instead of raw markup for OTP context, and limits action links to confident verification/reset URLs extracted from real anchor `href`s or plain-text URLs.
 - Updated `backend/app/db.py` so message detail responses recompute `extracted_otps` and `extracted_links` with the latest heuristics on read, which fixes existing stored messages without needing those emails to be re-imported.
-- Added regression tests for lowercase false positives and noisy HTML asset links in `backend/tests/test_parser.py`, then redeployed the backend parser/db fixes to VPS and re-checked live health at `https://lush.congmail.top/api/health`.
+- Added regression tests for lowercase false positives and noisy HTML asset links in `backend/tests/test_parser.py`, then redeployed the backend parser/db fixes to VPS and re-checked live health at `https://retired-app-host/api/health`.
 
 ## 2026-03-23 10:56 - Tighten UI and subagent operating rules
 

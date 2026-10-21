@@ -1,87 +1,34 @@
-# Lush Temp Mail VPS migration
+# LushMedia full mail migration
 
-Script này dùng mô hình **cài mới code từ GitHub rồi migrate runtime data**. Nó không clone nguyên cả VPS và không ghi gì lên VPS nguồn.
+This migration includes the web app and the `lushmedia.net` mail domain. The helper `scripts/migrate_vps.sh` only copies the app `.env` and SQLite data; it does not move a mailserver or mailbox data.
 
-## Script làm gì
+## Confirm the source
 
-- Clone hoặc reset repo `Lush-Temp-Mail` trên VPS mới.
-- Copy `deploy/.env` từ VPS nguồn nếu có.
-- Copy `deploy/data/` từ VPS nguồn, gồm SQLite database và dữ liệu app.
-- Backup `deploy/data/` hiện có trên VPS mới trước khi ghi thêm dữ liệu.
-- Tạo Docker network `shared_proxy` và `mailstack_default` nếu thiếu.
-- Rebuild/start container `lushtempmail-app`.
-- Kiểm tra `/api/health` bên trong container.
+Before moving data, confirm the active origin from DNS and service responses. Do not assume the old app VPS is also the active mailserver. Current public checks identify `109.123.227.253` for both the app health endpoint and SMTP greeting; SSH access to this host is required to preserve its live mailbox and application data.
 
-## Chuẩn bị
+## Back up first
 
-Trên VPS mới, cần SSH được vào VPS nguồn. Nên dùng SSH key thay vì password:
+Before changing the target Docker Mailserver, make a root-only backup of its existing compose file, mailserver configuration, mail data, and mail state. Back up the source app database, environment, mail configuration, and mail data. Record checksums and run SQLite `PRAGMA quick_check` on copied databases.
 
-```bash
-ssh-copy-id root@OLD_VPS_IP
-```
+Do not copy the entire shared mailserver volume blindly. Map only the `lushmedia.net` account and messages into the target so mailboxes for other domains remain separate. Preserve the target `temp.darkambient.co` account, aliases, DKIM, certificates, and mail data.
 
-Mailserver, MX, DKIM, Caddy và DNS không nằm trong script này. Phần đó nên setup riêng trước hoặc sau khi app chạy.
+## Prepare target services
 
-## Chạy migrate
+1. Deploy the LushMail app with `docker-compose.nginx.yml`; it uses `127.0.0.1:8017` and the existing `darkambient_mail` Docker network.
+2. Add `contact@lushmedia.net` and the LushMedia catch-all/postmaster/DMARC aliases to the existing Docker Mailserver without replacing its current accounts.
+3. Add `mx.lushmedia.net` as a Docker DNS alias for the mailserver and issue a mail TLS certificate that includes both the current DarkAmbient MX hostname and `mx.lushmedia.net`. The existing source Caddy can forward HTTP ACME challenges to the target before the DNS change.
+4. Publish authenticated SMTP submission on `587` and IMAPS on `993` (optionally SMTPS on `465`). Do not enable an open relay.
+5. Set the app's IMAP/SMTP host to `mx.lushmedia.net` and central mailbox to `contact@lushmedia.net`.
+6. Reuse the source's existing `mail` DKIM key and published selector in the target's Rspamd `dkim_signing.conf`; keep the DarkAmbient signing entry intact.
 
-```bash
-cd /opt/lush-temp-mail/app
-SOURCE_HOST=OLD_VPS_IP bash deploy/scripts/migrate_vps.sh
-```
+## Cut over and verify
 
-Nếu repo chưa có trên VPS mới, có thể tải script từ GitHub rồi chạy, nhưng cách dễ nhất vẫn là clone repo trước:
+After target health and account checks pass, update DNS:
 
-```bash
-git clone https://github.com/shinemusicllc/Lush-Temp-Mail.git /opt/lush-temp-mail/app
-cd /opt/lush-temp-mail/app
-SOURCE_HOST=OLD_VPS_IP bash deploy/scripts/migrate_vps.sh
-```
+- `A mail.lushmedia.net -> 194.233.69.135` (proxied for HTTPS)
+- `A mx.lushmedia.net -> 194.233.69.135` (DNS only)
+- `MX lushmedia.net 10 mx.lushmedia.net` (DNS only)
 
-## Tùy biến thường dùng
+Preserve existing SPF, DKIM, and DMARC records. Verify public `/api/health`, protected login, IMAP sync, authenticated SMTP submission, inbound delivery to a new alias, and SPF/DKIM/DMARC `Authentication-Results` from an external mailbox. Keep the source running until those checks pass and rollback is no longer needed.
 
-```bash
-SOURCE_HOST=OLD_VPS_IP \
-SOURCE_USER=root \
-SOURCE_APP_DIR=/opt/lush-temp-mail/app \
-TARGET_APP_DIR=/opt/lush-temp-mail/app \
-BRANCH=main \
-bash deploy/scripts/migrate_vps.sh
-```
-
-Không copy `.env`:
-
-```bash
-SOURCE_HOST=OLD_VPS_IP SKIP_ENV=1 bash deploy/scripts/migrate_vps.sh
-```
-
-Không copy data:
-
-```bash
-SOURCE_HOST=OLD_VPS_IP SKIP_DATA=1 bash deploy/scripts/migrate_vps.sh
-```
-
-Chỉ chuẩn bị code/data, chưa start app:
-
-```bash
-SOURCE_HOST=OLD_VPS_IP START_APP=0 bash deploy/scripts/migrate_vps.sh
-```
-
-## Sau khi migrate
-
-Kiểm tra container:
-
-```bash
-docker ps --filter name=lushtempmail-app
-docker logs --tail 80 lushtempmail-app
-docker exec lushtempmail-app python - <<'PY'
-from urllib.request import urlopen
-print(urlopen("http://127.0.0.1:8010/api/health", timeout=10).read().decode())
-PY
-```
-
-Nếu dùng domain mới, cập nhật `deploy/.env` các biến mail/domain rồi rebuild:
-
-```bash
-cd /opt/lush-temp-mail/app
-docker compose -f deploy/docker-compose.vps.yml --env-file deploy/.env up -d --build
-```
+For mail that arrives at the old IP during DNS propagation, run `scripts/sync_source_maildir.py` on the target through `lushmedia-mail-bridge.timer`. Its ledger prevents repeated copies when a source Maildir message moves between `new/` and `cur/`. Remove this timer and the temporary source SSH authorization after the rollback window.
