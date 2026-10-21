@@ -39,4 +39,4 @@ Move the `mail.lushmedia.net` web app and `lushmedia.net` mail service to VPS `1
 
 ## Remaining cutover
 
-Cloudflare is at the sign-in page. Once the DNS account is available, refresh the source SQLite snapshot just before cutover, point the proxied `mail` A and DNS-only `mx` A records to `194.233.69.135`, verify public web and external inbound/outbound mail, then keep the source/bridge during the rollback window. Remove the temporary SSH key, timer, and source service only after late deliveries have stopped.
+Cloudflare is at the sign-in page. Once the DNS account is available, compare source and target SQLite changes since the snapshot and reconcile any new user/alias settings before cutover. Do not replace the active target database: its IMAP UIDs and test delivery have already advanced. Point the proxied `mail` A and DNS-only `mx` A records to `194.233.69.135`, verify public web and external inbound/outbound mail, then keep the source/bridge during the rollback window. Remove the temporary SSH key, timer, and source service only after late deliveries have stopped.
