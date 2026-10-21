@@ -32,6 +32,7 @@ Move the `mail.lushmedia.net` web app and `lushmedia.net` mail service to VPS `1
 - External SMTP connection to `mx.lushmedia.net:25` completed STARTTLS with a valid certificate and accepted an envelope recipient at `lushmedia.net` (no message DATA was sent). The mail bridge timer remains active and the source still has 6 users, 88 aliases, 760 messages, and 2 forwarding rules, matching the source snapshot counts.
 - A real Gmail message sent to `20261021@lushmedia.net` was received by the target MX at 11:07:51 +07, delivered through the catch-all to `contact@lushmedia.net`, and indexed by the app. The app automatically created the inbound alias and the target database advanced to 762 messages/90 aliases. A short SMTP reply from the target to the same Gmail sender was accepted by Gmail MX with `250 2.0.0` at 11:09:26 +07.
 - After cutover, the admin inbox was reported empty. The target `db.list_messages()` raised `IndexError` on a migrated message without `Message-ID` because the fallback referenced columns omitted from its query. Changed the fallback to the selected `messages.id`; the public alias lookup already returned the new Gmail message.
+- Deployed the admin inbox fix as commit `05886b3`. The live admin list now returns 194 visible entries, including `20261021@lushmedia.net` first; `/api/messages?filter_name=all` returned 200 from an active admin session. The public alias lookup returns one message for `20261021@lushmedia.net`.
 
 ## Migration sequence
 
