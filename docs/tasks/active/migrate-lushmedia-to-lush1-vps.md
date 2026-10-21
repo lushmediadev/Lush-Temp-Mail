@@ -27,6 +27,9 @@ Move the `mail.lushmedia.net` web app and `lushmedia.net` mail service to VPS `1
 - Started `lushmail-app` and Nginx on the target. Direct HTTPS `/api/health` returned 200; IMAP and SMTP STARTTLS authentication succeeded. A delivery to an uncreated alias was indexed with OTP and link extraction, and the outgoing message carried a LushMedia DKIM signature.
 - Installed `lushmedia-mail-bridge.timer` on the target to import late Maildir messages from the source every five minutes. Its first run found no new mail.
 - Checked that sample passwords in `.env` fail on both source and target because login users are stored in SQLite; the original account database is preserved. A login with an actual user password remains to be verified.
+- Cut over Cloudflare `mail` (proxied) and `mx` (DNS only) A records to `194.233.69.135`. The MX record remains `mx.lushmedia.net` at priority 10. Both authoritative nameservers return the new MX address.
+- Public `https://mail.lushmedia.net/api/health` returns 200 and the public page contains the updated `lushmedia.net` UI. Anonymous `/api/auth/session` returns 401. Public `temp.darkambient.co/api/health` remains 200.
+- External SMTP connection to `mx.lushmedia.net:25` completed STARTTLS with a valid certificate and accepted an envelope recipient at `lushmedia.net` (no message DATA was sent). The mail bridge timer remains active and the source still has 6 users, 88 aliases, 760 messages, and 2 forwarding rules, matching the source snapshot counts.
 
 ## Migration sequence
 
@@ -39,4 +42,4 @@ Move the `mail.lushmedia.net` web app and `lushmedia.net` mail service to VPS `1
 
 ## Remaining cutover
 
-Cloudflare is at the sign-in page. Once the DNS account is available, compare source and target SQLite changes since the snapshot and reconcile any new user/alias settings before cutover. Do not replace the active target database: its IMAP UIDs and test delivery have already advanced. Point the proxied `mail` A and DNS-only `mx` A records to `194.233.69.135`, verify public web and external inbound/outbound mail, then keep the source/bridge during the rollback window. Remove the temporary SSH key, timer, and source service only after late deliveries have stopped.
+DNS and public web cutover are complete. The target database has 6 users, 89 aliases, 761 messages, and 2 forwarding rules; the extra alias/message are the migration test. The source remains intact for rollback, and the five-minute mail bridge handles late arrivals. A real email from an external provider and a reply to an external mailbox should still be checked to confirm full delivery, SPF/DKIM/DMARC at the recipient, and login with a current user password. Remove the temporary SSH key, timer, and source service only after the rollback window and late deliveries have ended.

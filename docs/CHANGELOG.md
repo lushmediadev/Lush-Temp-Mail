@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-21 — Cloudflare mail cutover
+
+- Changed: pointed the proxied `mail.lushmedia.net` and DNS-only `mx.lushmedia.net` A records to `194.233.69.135`; kept the existing MX, SPF, DKIM, and DMARC records.
+- Verified: authoritative DNS, public LushMail and DarkAmbient health, origin Nginx, SMTP STARTTLS and recipient acceptance, and the active late-mail bridge. The source remains available for rollback; real external delivery and user login are pending verification.
+
 ### 2026-10-21 - migrate_lushmedia_mail
 - Updated active app copy and parser fixtures to use `lushmedia.net`; documented `mail.lushmedia.net` as the app URL and `mx.lushmedia.net` as the mail transport host.
 - Added a target-specific Docker Compose/Nginx deploy profile and updated operations helpers to use it.
