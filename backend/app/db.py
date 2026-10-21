@@ -1729,7 +1729,8 @@ def list_messages(*, alias_id: int | None = None, filter_name: str = "all", sear
         item = row_to_message_summary(row)
         if item is None:
             continue
-        key = f"{item.get('message_id') or f'{row['imap_mailbox']}:{row['imap_uid']}'}:{item['recipient_address']}"
+        message_key = item.get("message_id") or str(row["id"])
+        key = f"{message_key}:{item['recipient_address']}"
         if key in seen_keys:
             continue
         seen_keys.add(key)

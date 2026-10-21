@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-21 — Khôi phục danh sách thư quản trị
+
+- Fixed: dùng `messages.id` làm khóa dự phòng khi email không có `Message-ID`, để `/api/messages` không lỗi `IndexError` và trang quản trị hiển thị thư đã lưu.
+- Verified: trên dữ liệu production đã di chuyển, luồng hộp thư người dùng tìm thấy email Gmail mới; lỗi danh sách quản trị được tái hiện trước khi sửa.
+
 ## 2026-10-21 — Cloudflare mail cutover
 
 - Changed: pointed the proxied `mail.lushmedia.net` and DNS-only `mx.lushmedia.net` A records to `194.233.69.135`; kept the existing MX, SPF, DKIM, and DMARC records.
